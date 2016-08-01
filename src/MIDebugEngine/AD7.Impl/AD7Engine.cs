@@ -14,6 +14,7 @@ using System.Globalization;
 using Microsoft.DebugEngineHost;
 
 using Logger = MICore.Logger;
+using Microsoft.VSCode.AD7Interop;
 
 namespace Microsoft.MIDebugEngine
 {
@@ -33,7 +34,7 @@ namespace Microsoft.MIDebugEngine
 
     [System.Runtime.InteropServices.ComVisible(true)]
     [System.Runtime.InteropServices.Guid("0fc2f352-2fc1-4f80-8736-51cd1ab28f16")]
-    sealed public class AD7Engine : IDebugEngine2, IDebugEngineLaunch2, IDebugEngine3, IDebugProgram3, IDebugEngineProgram2, IDebugMemoryBytes2, IDebugEngine110
+    sealed public class AD7Engine : IDebugEngine2, IDebugEngineLaunch2, IDebugEngine3, IDebugProgram3, IDebugEngineProgram2, IDebugMemoryBytes2, IDebugEngine110, IDebugVSCodeEngineLaunch
     {
         // used to send events to the debugger. Some examples of these events are thread create, exception thrown, module load.
         private EngineCallback _engineCallback;
@@ -1022,6 +1023,16 @@ namespace Microsoft.MIDebugEngine
         {
             Debug.Fail("This function is not called by the debugger.");
             return Constants.E_NOTIMPL;
+        }
+
+        void IDebugVSCodeEngineLaunch.Launch(dynamic args, out ErrorBody error)
+        {
+            throw new NotImplementedException();
+        }
+
+        void IDebugVSCodeEngineLaunch.Attach(dynamic args, out ErrorBody error)
+        {
+            throw new NotImplementedException();
         }
 
         #endregion

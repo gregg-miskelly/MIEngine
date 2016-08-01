@@ -186,6 +186,10 @@
       <Project>{54c33afa-438d-4932-a2f0-d0f2bb2fadc9}</Project>
       <Name>MICore</Name>
     </ProjectReference>
+    <ProjectReference Include="..\Microsoft.VSCode.AD7Interop\Microsoft.VSCode.AD7Interop.csproj">
+      <Project>{a7dd5674-4902-450f-8eb3-dd1999114dff}</Project>
+      <Name>Microsoft.VSCode.AD7Interop</Name>
+    </ProjectReference>
     <ProjectReference Include="..\prebuild\prebuild.csproj">
       <Project>{95C0421F-D4C1-46E8-9177-6DAA4D71D0F2}</Project>
       <Name>Prebuild</Name>
