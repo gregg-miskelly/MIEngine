@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using MICore;
@@ -8,7 +8,6 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.Debugger.Interop;
-using System.Diagnostics;
 using System.Globalization;
 using System.Collections.ObjectModel;
 using System.Threading;
@@ -37,19 +36,19 @@ namespace Microsoft.MIDebugEngine
 
         private readonly object _updateLock = new object();
         private int? _lastUpdateTime;
-        private Task _updateTask;
-        private CancellationTokenSource _updateDelayCancelSource;
+        private Task? _updateTask;
+        private CancellationTokenSource? _updateDelayCancelSource;
 
         private static readonly Guid CppExceptionCategoryGuid = new Guid("{3A12D0B7-C26C-11D0-B442-00A0244A1DD2}");
 
-    private class SettingsUpdates
+        private class SettingsUpdates
         {
             // Threading note: these are only modified on the main thread
             public ExceptionBreakpointStates? NewCategoryState;
             public readonly Dictionary<string, ExceptionBreakpointStates> RulesToAdd;
             public readonly HashSet<string> RulesToRemove = new HashSet<string>();
 
-            public SettingsUpdates(/*OPTIONAL*/ ExceptionBreakpointStates? initialNewCategoryState, /*OPTIONAL*/ ReadOnlyDictionary<string, ExceptionBreakpointStates> initialRuleChanges)
+            public SettingsUpdates(ExceptionBreakpointStates? initialNewCategoryState, ReadOnlyDictionary<string, ExceptionBreakpointStates>? initialRuleChanges)
             {
                 this.NewCategoryState = initialNewCategoryState;
 
@@ -105,8 +104,7 @@ namespace Microsoft.MIDebugEngine
             public readonly Dictionary<string, long> CurrentRules = new Dictionary<string, long>();
 
             private readonly object _updateLock = new object();
-            /*OPTIONAL*/
-            private SettingsUpdates _settingsUpdate;
+            private SettingsUpdates? _settingsUpdate;
 
             public ExceptionCategorySettings(ExceptionManager parent, HostConfigurationSection categoryKey, string categoryName)
             {
@@ -116,7 +114,7 @@ namespace Microsoft.MIDebugEngine
                 Dictionary<string, ExceptionBreakpointStates> exceptionSettings = new Dictionary<string, ExceptionBreakpointStates>();
                 foreach (string valueName in categoryKey.GetValueNames())
                 {
-                    if (string.IsNullOrEmpty(valueName) || valueName == "*" || !ExceptionManager.IsSupportedException(valueName))
+                    if (IsNullOrEmpty(valueName) || valueName == "*" || !ExceptionManager.IsSupportedException(valueName))
                         continue;
 
                     ExceptionBreakpointStates value = RegistryToExceptionBreakpointState(categoryKey.GetValue(valueName));
@@ -145,27 +143,27 @@ namespace Microsoft.MIDebugEngine
                 }
             }
 
-            public SettingsUpdates DetachSettingsUpdate()
+            public SettingsUpdates? DetachSettingsUpdate()
             {
                 lock (_updateLock)
                 {
-                    SettingsUpdates returnValue = _settingsUpdate;
+                    SettingsUpdates? returnValue = _settingsUpdate;
                     _settingsUpdate = null;
                     return returnValue;
                 }
             }
 
-            private static ExceptionBreakpointStates RegistryToExceptionBreakpointState(/*OPTIONAL*/ object registryValue)
+            private static ExceptionBreakpointStates RegistryToExceptionBreakpointState(object? registryValue)
             {
-                if (registryValue == null || !(registryValue is int))
+                if (registryValue is not int intValue)
                     return ExceptionBreakpointStates.None;
 
-                enum_EXCEPTION_STATE value = (enum_EXCEPTION_STATE)(int)registryValue;
+                enum_EXCEPTION_STATE value = (enum_EXCEPTION_STATE)intValue;
                 return ExceptionManager.ToExceptionBreakpointState(value);
             }
         };
 
-        public ExceptionManager(MICommandFactory commandFactory, WorkerThread worker, ISampleEngineCallback callback, /*OPTIONAL*/ HostConfigurationStore configStore)
+        public ExceptionManager(MICommandFactory commandFactory, WorkerThread worker, ISampleEngineCallback callback, HostConfigurationStore? configStore)
         {
             Debug.Assert(commandFactory != null, "Missing commandFactory");
             Debug.Assert(worker != null, "Missing worker");
@@ -321,8 +319,8 @@ namespace Microsoft.MIDebugEngine
                             displayException = string.Format(CultureInfo.InvariantCulture, " '{0}'", exceptionName);
                         }
 
-                        string functionName = frame?.TryFindString("func");
-                        if (string.IsNullOrWhiteSpace(functionName))
+                        string? functionName = frame?.TryFindString("func");
+                        if (IsNullOrWhiteSpace(functionName))
                         {
                             exceptionDescription = string.Format(CultureInfo.CurrentCulture, ResourceStrings.Exception_Thrown, displayException, address);
                         }
@@ -379,8 +377,8 @@ namespace Microsoft.MIDebugEngine
         {
             lock (_updateLock)
             {
-                Task updateTask = _updateTask;
-                if (updateTask != null)
+                Task? updateTask = _updateTask;
+                if (updateTask is not null)
                 {
                     // If we are still delaying our processing, stop delaying it
                     _updateDelayCancelSource?.Cancel();
@@ -418,9 +416,15 @@ namespace Microsoft.MIDebugEngine
                 // Delay sending updates until it has been ~50 ms since we have seen an update
                 try
                 {
-                    while (!_updateDelayCancelSource.IsCancellationRequested)
+                    CancellationTokenSource? updateDelayCancelSource = _updateDelayCancelSource;
+                    if (updateDelayCancelSource is null)
                     {
-                        await Task.Delay(50, _updateDelayCancelSource.Token);
+                        throw new InvalidOperationException("Missing update delay cancellation source.");
+                    }
+
+                    while (!updateDelayCancelSource.IsCancellationRequested)
+                    {
+                        await Task.Delay(50, updateDelayCancelSource.Token);
 
                         lock (_updateLock)
                         {
@@ -455,8 +459,8 @@ namespace Microsoft.MIDebugEngine
                     {
                         ExceptionCategorySettings categorySettings = categoryPair.Value;
 
-                        SettingsUpdates settingsUpdate = categorySettings.DetachSettingsUpdate();
-                        if (settingsUpdate == null)
+                        SettingsUpdates? settingsUpdate = categorySettings.DetachSettingsUpdate();
+                        if (settingsUpdate is null)
                         {
                             continue;
                         }
@@ -634,9 +638,13 @@ namespace Microsoft.MIDebugEngine
                 return "0x" + dwCode.ToString("X", CultureInfo.InvariantCulture);
         }
 
-        private ReadOnlyDictionary<Guid, ExceptionCategorySettings> ReadDefaultSettings(HostConfigurationStore configStore)
+        private ReadOnlyDictionary<Guid, ExceptionCategorySettings> ReadDefaultSettings(HostConfigurationStore? configStore)
         {
             Dictionary<Guid, ExceptionCategorySettings> categoryMap = new Dictionary<Guid, ExceptionCategorySettings>();
+            if (configStore is null)
+            {
+                return new ReadOnlyDictionary<Guid, ExceptionCategorySettings>(categoryMap);
+            }
 
             IEnumerable<Guid> categories = _commandFactory.GetSupportedExceptionCategories();
             foreach (Guid categoryId in categories)

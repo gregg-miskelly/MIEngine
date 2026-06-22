@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using MICore;
@@ -6,7 +6,6 @@ using Microsoft.DebugEngineHost;
 using Microsoft.VisualStudio.Debugger.Interop;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -22,8 +21,8 @@ namespace Microsoft.MIDebugEngine
         private BP_REQUEST_INFO _bpRequestInfo;
         private AD7Engine _engine;
         private BreakpointManager _bpManager;
-        private PendingBreakpoint _bp; // non-null indicates MI breakpoint has been created
-        private AD7ErrorBreakpoint _BPError;
+        private PendingBreakpoint? _bp; // non-null indicates MI breakpoint has been created
+        private AD7ErrorBreakpoint? _BPError;
 
         private List<AD7BoundBreakpoint> _boundBreakpoints;
 
@@ -31,23 +30,23 @@ namespace Microsoft.MIDebugEngine
         private bool _deleted;
         private bool _pendingDelete;
 
-        private string _documentName = null;
-        private string _functionName = null;
+        private string? _documentName = null;
+        private string? _functionName = null;
         private TEXT_POSITION[] _startPosition = new TEXT_POSITION[1];
         private TEXT_POSITION[] _endPosition = new TEXT_POSITION[1];
-        private string _condition = null;
-        private string _address = null;
+        private string? _condition = null;
+        private string? _address = null;
         private ulong _codeAddress = 0;
         private uint _size = 0;
-        private IEnumerable<Checksum> _checksums = null;
+        private IEnumerable<Checksum> _checksums = Enumerable.Empty<Checksum>();
 
         public DebuggedProcess DebuggedProcess { get { return _engine.DebuggedProcess; } }
 
         internal string BreakpointId
         {
-            get { return _bp == null ? string.Empty : _bp.Number; }
+            get { return _bp is null ? string.Empty : _bp.Number; }
         }
-        internal string AddressId { get; private set; }
+        internal string? AddressId { get; private set; }
 
         internal bool Enabled { get { return _enabled; } }
         internal bool Deleted { get { return _deleted; } }
@@ -61,7 +60,7 @@ namespace Microsoft.MIDebugEngine
 
         internal bool IsHardwareBreakpoint { get { return _engine.DebuggedProcess.LaunchOptions.RequireHardwareBreakpoints; } }
 
-        internal PendingBreakpoint PendingBreakpoint { get { return _bp; } }
+        internal PendingBreakpoint PendingBreakpoint { get { return _bp!; } }
 
         public AD7PendingBreakpoint(IDebugBreakpointRequest2 pBPRequest, AD7Engine engine, BreakpointManager bpManager)
         {
@@ -78,8 +77,6 @@ namespace Microsoft.MIDebugEngine
             _deleted = false;
             _pendingDelete = false;
 
-            _bp = null;    // no underlying breakpoint created yet
-            _BPError = null;
         }
 
         private bool VerifyCondition(BP_CONDITION request)
@@ -121,10 +118,15 @@ namespace Microsoft.MIDebugEngine
 
         // Get the document context for this pending breakpoint. A document context is a abstract representation of a source file 
         // location.
-        public AD7DocumentContext GetDocumentContext(ulong address, string functionName)
+        public AD7DocumentContext? GetDocumentContext(ulong address, string functionName)
         {
             if ((enum_BP_LOCATION_TYPE)_bpRequestInfo.bpLocation.bpLocationType == enum_BP_LOCATION_TYPE.BPLT_CODE_FILE_LINE)
             {
+                if (_documentName is null)
+                {
+                    return null;
+                }
+
                 AD7MemoryAddress codeContext = new AD7MemoryAddress(_engine, address, functionName);
 
                 return new AD7DocumentContext(new MITextPosition(_documentName, _startPosition[0], _startPosition[0]), codeContext);
@@ -170,7 +172,7 @@ namespace Microsoft.MIDebugEngine
                     // Make sure that HostMarshal calls happen on main thread instead of poll thread.
                     lock (_boundBreakpoints)
                     {
-                        if (_bp != null)   // already bound
+                        if (_bp is not null)   // already bound
                         {
                             Debug.Fail("Breakpoint already bound");
                             return Constants.S_FALSE;
@@ -252,7 +254,7 @@ namespace Microsoft.MIDebugEngine
                                         _address = address;
                                     }
                                     _size = (uint)_bpRequestInfo.bpLocation.unionmember4;
-                                    if (_condition != null)
+                                    if (_condition is not null)
                                     {
                                         goto default;   // mi has no conditions on watchpoints
                                     }
@@ -275,7 +277,11 @@ namespace Microsoft.MIDebugEngine
                 else
                 {
                     // The breakpoint could not be bound. This may occur for many reasons such as an invalid location, an invalid expression, etc...
-                    _engine.Callback.OnBreakpointError(_BPError);
+                    if (_BPError is not null)
+                    {
+                        _engine.Callback.OnBreakpointError(_BPError);
+                    }
+
                     return Constants.S_FALSE;
                 }
             }
@@ -302,11 +308,16 @@ namespace Microsoft.MIDebugEngine
 
         private int BindWithTimeout()
         {
-            Task bindTask = null;
+            Task? bindTask = null;
             _engine.DebuggedProcess.WorkerThread.RunOperation(() =>
             {
                 bindTask = _engine.DebuggedProcess.AddInternalBreakAction(this.BindAsync);
             });
+
+            if (bindTask is null)
+            {
+                return Constants.E_FAIL;
+            }
 
             bindTask.Wait(_engine.GetBPLongBindTimeout());
             if (!bindTask.IsCompleted)
@@ -334,27 +345,27 @@ namespace Microsoft.MIDebugEngine
             {
                 PendingBreakpoint.BindResult bindResult;
                 // Bind all breakpoints that match this source and line number.
-                if (_documentName != null)
+                if (_documentName is not null)
                 {
-                    bindResult = await PendingBreakpoint.Bind(_documentName, _startPosition[0].dwLine + 1, _startPosition[0].dwColumn, _engine.DebuggedProcess, _condition, _enabled, _checksums, this);
+                    bindResult = await PendingBreakpoint.Bind(_documentName, _startPosition[0].dwLine + 1, _startPosition[0].dwColumn, _engine.DebuggedProcess, _condition!, _enabled, _checksums, this);
                 }
-                else if (_functionName != null)
+                else if (_functionName is not null)
                 {
-                    bindResult = await PendingBreakpoint.Bind(_functionName, _engine.DebuggedProcess, _condition, _enabled, this);
+                    bindResult = await PendingBreakpoint.Bind(_functionName, _engine.DebuggedProcess, _condition!, _enabled, this);
                 }
                 else if (_codeAddress != 0)
                 {
-                    bindResult = await PendingBreakpoint.Bind(_codeAddress, _engine.DebuggedProcess, _condition, _enabled, this);
+                    bindResult = await PendingBreakpoint.Bind(_codeAddress, _engine.DebuggedProcess, _condition!, _enabled, this);
                 }
                 else
                 {
                     try
                     {
-                        bindResult = await PendingBreakpoint.Bind(_address, _size, _engine.DebuggedProcess, _condition, this);
+                        bindResult = await PendingBreakpoint.Bind(_address!, _size, _engine.DebuggedProcess, _condition!, this);
 
                         lock (_engine.DebuggedProcess.DataBreakpointVariables)
                         {
-                            string address = AddressId ?? _address;
+                            string address = AddressId ?? _address!;
                             if (!_engine.DebuggedProcess.DataBreakpointVariables.Contains(address)) // might need to expand condition
                             {
                                 _engine.DebuggedProcess.DataBreakpointVariables.Add(address);
@@ -371,7 +382,7 @@ namespace Microsoft.MIDebugEngine
 
                 lock (_boundBreakpoints)
                 {
-                    if (bindResult.PendingBreakpoint != null)
+                    if (bindResult.PendingBreakpoint is not null)
                     {
                         _bp = bindResult.PendingBreakpoint;    // an MI breakpoint object exists: TODO: lock?
                     }
@@ -381,7 +392,12 @@ namespace Microsoft.MIDebugEngine
                     }
                     else
                     {
-                        Debug.Assert(_bp != null);
+                        if (_bp is null)
+                        {
+                            this.SetError(new AD7ErrorBreakpoint(this, bindResult.ErrorMessage), true);
+                            return;
+                        }
+
                         foreach (BoundBreakpoint bp in bindResult.BoundBreakpoints)
                         {
                             AddBoundBreakpoint(bp);
@@ -390,7 +406,7 @@ namespace Microsoft.MIDebugEngine
                 }
 
                 // Set ignore count via -break-after if a pass count is configured
-                if (_bp != null && (_bpRequestInfo.dwFields & enum_BPREQI_FIELDS.BPREQI_PASSCOUNT) != 0
+                if (_bp is not null && (_bpRequestInfo.dwFields & enum_BPREQI_FIELDS.BPREQI_PASSCOUNT) != 0
                     && _bpRequestInfo.bpPassCount.stylePassCount != enum_BP_PASSCOUNT_STYLE.BP_PASSCOUNT_NONE)
                 {
                     uint ignoreCount = ComputeIgnoreCount(_bpRequestInfo.bpPassCount.stylePassCount, _bpRequestInfo.bpPassCount.dwPassCount, 0);
@@ -425,7 +441,7 @@ namespace Microsoft.MIDebugEngine
             }
         }
 
-        internal AD7BoundBreakpoint AddBoundBreakpoint(BoundBreakpoint bp)
+        internal AD7BoundBreakpoint? AddBoundBreakpoint(BoundBreakpoint bp)
         {
             lock (_boundBreakpoints)
             {
@@ -464,14 +480,19 @@ namespace Microsoft.MIDebugEngine
         // Determines whether this pending breakpoint can bind to a code location.
         int IDebugPendingBreakpoint2.CanBind(out IEnumDebugErrorBreakpoints2 ppErrorEnum)
         {
-            ppErrorEnum = null;
+            ppErrorEnum = null!; // nullable annotations don't work for COM methods
 
             if (!CanBind())
             {
                 // Called to determine if a pending breakpoint can be bound. 
                 // The breakpoint may not be bound for many reasons such as an invalid location, an invalid expression, etc...
                 // The debugger will display information about why the breakpoint did not bind to the user.
-                ppErrorEnum = new AD7ErrorBreakpointsEnum(new[] { this._BPError });
+                if (_BPError is null)
+                {
+                    return Constants.S_FALSE;
+                }
+
+                ppErrorEnum = new AD7ErrorBreakpointsEnum(new[] { _BPError });
                 return Constants.S_FALSE;
             }
 
@@ -492,7 +513,7 @@ namespace Microsoft.MIDebugEngine
                 {
                     _pendingDelete = true;
                 }
-                else if (_bp != null)
+                else if (_bp is not null)
                 {
                     _bp.Delete(_engine.DebuggedProcess);
                     _bp = null;
@@ -505,14 +526,14 @@ namespace Microsoft.MIDebugEngine
         internal async Task DeletePendingDelete()
         {
             Debug.Assert(PendingDelete, "Breakpoint is not marked for deletion");
-            PendingBreakpoint bp = null;
+            PendingBreakpoint? bp = null;
             lock (_boundBreakpoints)
             {
                 bp = _bp;
                 _bp = null;
                 _pendingDelete = false;
             }
-            if (bp != null)
+            if (bp is not null)
             {
                 await bp.DeleteAsync(_engine.DebuggedProcess);
             }
@@ -558,8 +579,8 @@ namespace Microsoft.MIDebugEngine
             if (_enabled != newValue)
             {
                 _enabled = newValue;
-                PendingBreakpoint bp = _bp;
-                if (bp != null)
+                PendingBreakpoint? bp = _bp;
+                if (bp is not null)
                 {
                     _engine.DebuggedProcess.WorkerThread.RunOperation(() =>
                     {
@@ -589,7 +610,7 @@ namespace Microsoft.MIDebugEngine
 
         internal AD7BoundBreakpoint[] EnumBoundBreakpoints()
         {
-            AD7BoundBreakpoint[] bplist = null;
+            AD7BoundBreakpoint[] bplist;
             lock (_boundBreakpoints)
             {
                 bplist = _boundBreakpoints.ToArray();
@@ -604,7 +625,7 @@ namespace Microsoft.MIDebugEngine
             // The sample engine does not support this, but a real world engine will want to send an instance of IDebugBreakpointErrorEvent2 to the
             // UI and return a valid enumeration of IDebugErrorBreakpoint2 from IDebugPendingBreakpoint2::EnumErrorBreakpoints. The debugger will then
             // display information about why the breakpoint did not bind to the user.
-            if ((_BPError != null) && ((bpErrorType & enum_BP_ERROR_TYPE.BPET_TYPE_ERROR) != 0))
+            if ((_BPError is not null) && ((bpErrorType & enum_BP_ERROR_TYPE.BPET_TYPE_ERROR) != 0))
             {
                 IDebugErrorBreakpoint2[] errlist = new IDebugErrorBreakpoint2[1];
                 errlist[0] = _BPError;
@@ -613,7 +634,7 @@ namespace Microsoft.MIDebugEngine
             }
             else
             {
-                ppEnum = null;
+                ppEnum = null!; // nullable annotations don't work for COM methods
                 return Constants.S_FALSE;
             }
         }
@@ -646,7 +667,7 @@ namespace Microsoft.MIDebugEngine
 
         int IDebugPendingBreakpoint2.SetCondition(BP_CONDITION bpCondition)
         {
-            PendingBreakpoint bp = null;
+            PendingBreakpoint? bp = null;
             lock (_boundBreakpoints)
             {
                 if (!VerifyCondition(bpCondition) || IsDataBreakpoint)
@@ -662,12 +683,12 @@ namespace Microsoft.MIDebugEngine
                 }
                 _bpRequestInfo.bpCondition = bpCondition;
                 _bpRequestInfo.dwFields |= enum_BPREQI_FIELDS.BPREQI_CONDITION;
-                if (_bp != null)
+                if (_bp is not null)
                 {
                     bp = _bp;
                 }
             }
-            if (bp != null)
+            if (bp is not null)
             {
                 _engine.DebuggedProcess.WorkerThread.RunOperation(() =>
                 {
@@ -684,14 +705,14 @@ namespace Microsoft.MIDebugEngine
             _bpRequestInfo.bpPassCount = bpPassCount;
             _bpRequestInfo.dwFields |= enum_BPREQI_FIELDS.BPREQI_PASSCOUNT;
 
-            PendingBreakpoint bp = null;
+            PendingBreakpoint? bp = null;
             lock (_boundBreakpoints)
             {
                 foreach (AD7BoundBreakpoint boundBp in _boundBreakpoints)
                 {
                     ((IDebugBoundBreakpoint2)boundBp).SetPassCount(bpPassCount);
                 }
-                if (_bp != null)
+                if (_bp is not null)
                 {
                     bp = _bp;
                 }
@@ -699,7 +720,7 @@ namespace Microsoft.MIDebugEngine
 
             // When the pass count is cleared (NONE), send ignore count 0 to clear
             // any stale GDB ignore count from the previous condition.
-            if (bp != null)
+            if (bp is not null)
             {
                 uint ignoreCount = 0;
                 if (bpPassCount.stylePassCount != enum_BP_PASSCOUNT_STYLE.BP_PASSCOUNT_NONE)
@@ -762,7 +783,7 @@ namespace Microsoft.MIDebugEngine
 
         internal async Task DisableForFuncEvalAsync()
         {
-            if (_enabled && _bp != null)
+            if (_enabled && _bp is not null)
             {
                 await _bp.EnableAsync(false, _engine.DebuggedProcess);
             }
@@ -770,7 +791,7 @@ namespace Microsoft.MIDebugEngine
 
         internal async Task EnableAfterFuncEvalAsync()
         {
-            if (!_enabled && _bp != null)
+            if (!_enabled && _bp is not null)
             {
                 await _bp.EnableAsync(true, _engine.DebuggedProcess);
             }
@@ -788,8 +809,8 @@ namespace Microsoft.MIDebugEngine
         {
             checksums = Enumerable.Empty<Checksum>();
 
-            IDebugBreakpointChecksumRequest2 checksumRequest = _pBPRequest as IDebugBreakpointChecksumRequest2;
-            if (checksumRequest == null)
+            IDebugBreakpointChecksumRequest2? checksumRequest = _pBPRequest as IDebugBreakpointChecksumRequest2;
+            if (checksumRequest is null)
             {
                 return Constants.E_NOTIMPL;
             }

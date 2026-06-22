@@ -7,7 +7,6 @@ using System.Text;
 using System.Runtime.ExceptionServices;
 using Microsoft.VisualStudio.Debugger.Interop;
 using Microsoft.VisualStudio.Debugger.Interop.UnixPortSupplier;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
@@ -38,15 +37,15 @@ namespace Microsoft.MIDebugEngine
     sealed public class AD7Engine : IDebugEngine2, IDebugEngineLaunch2, IDebugEngine3, IDebugProgram3, IDebugEngineProgram2, IDebugMemoryBytes2, IDebugEngine110, IDebugProgramDAP, IDebugMemoryBytesDAP, IDisposable
     {
         // used to send events to the debugger. Some examples of these events are thread create, exception thrown, module load.
-        private EngineCallback _engineCallback;
+        private EngineCallback _engineCallback = null!;
 
         // The sample debug engine is split into two parts: a managed front-end and a mixed-mode back end. DebuggedProcess is the primary
         // object in the back-end. AD7Engine holds a reference to it.
-        private DebuggedProcess _debuggedProcess;
+        private DebuggedProcess _debuggedProcess = null!;
 
         // This object facilitates calling from this thread into the worker thread of the engine. This is necessary because the Win32 debugging
         // api requires thread affinity to several operations.
-        private WorkerThread _pollThread;
+        private WorkerThread _pollThread = null!;
 
         // This object manages breakpoints in the sample engine.
         private BreakpointManager _breakpointManager;
@@ -56,17 +55,17 @@ namespace Microsoft.MIDebugEngine
         // A unique identifier for the program being debugged.
         private Guid _ad7ProgramId;
 
-        private HostConfigurationStore _configStore;
+        private HostConfigurationStore _configStore = null!;
 
-        public Logger Logger { private set; get; }
+        public Logger Logger { private set; get; } = MICore.Logger.EnsureInitialized();
 
-        private IDebugSettingsCallback110 _settingsCallback;
+        private IDebugSettingsCallback110? _settingsCallback;
 
-        private static List<int> s_childProcessLaunch = new List<int>();
+        private static readonly List<int> s_childProcessLaunch = new List<int>();
 
         private static int s_bpLongBindTimeout = 0;
 
-        private IDebugUnixShellPort _unixPort;
+        private IDebugUnixShellPort? _unixPort;
 
         public AD7Engine()
         {
@@ -109,9 +108,9 @@ namespace Microsoft.MIDebugEngine
 
             if (isDisposing)
             {
-                _engineCallback = null;
-                _debuggedProcess = null;
-                _pollThread = null;
+                _engineCallback = null!;
+                _debuggedProcess = null!;
+                _pollThread = null!;
                 _ad7ProgramId = Guid.Empty;
                 _unixPort = null;
             }
@@ -148,7 +147,7 @@ namespace Microsoft.MIDebugEngine
         internal uint CurrentRadix()
         {
             uint radix;
-            if (_settingsCallback != null && _settingsCallback.GetDisplayRadix(out radix) == Constants.S_OK)
+            if (_settingsCallback is not null && _settingsCallback.GetDisplayRadix(out radix) == Constants.S_OK)
             {
                 return radix;
             }
@@ -177,7 +176,7 @@ namespace Microsoft.MIDebugEngine
             return EngineUtils.GetAddressDescription(_debuggedProcess, ip);
         }
 
-        public object GetMetric(string metric)
+        public object? GetMetric(string metric)
         {
             return _configStore.GetEngineMetric(metric);
         }
@@ -198,7 +197,7 @@ namespace Microsoft.MIDebugEngine
             }
             IDebugProgram2 portProgram = portProgramArray[0];
 
-            Exception exception = null;
+            Exception? exception = null;
             try
             {
                 IDebugProcess2 process;
@@ -210,7 +209,7 @@ namespace Microsoft.MIDebugEngine
 
                 // Attach can either be called to attach to a new process, or to complete an attach
                 // to a launched process
-                if (_pollThread == null)
+                if (_pollThread is null)
                 {
                     if (processId.ProcessIdType != (uint)enum_AD_PROCESS_ID.AD_PROCESS_ID_SYSTEM)
                     {
@@ -221,8 +220,8 @@ namespace Microsoft.MIDebugEngine
                     IDebugPort2 port;
                     EngineUtils.RequireOk(process.GetPort(out port));
 
-                    Debug.Assert(_engineCallback == null);
-                    Debug.Assert(_debuggedProcess == null);
+                    Debug.Assert(_engineCallback is null);
+                    Debug.Assert(_debuggedProcess is null);
 
                     _engineCallback = new EngineCallback(this, ad7Callback);
                     LaunchOptions launchOptions = CreateAttachLaunchOptions(processId.dwProcessId, port);
@@ -255,6 +254,11 @@ namespace Microsoft.MIDebugEngine
 
             // If we just return the exception as an HRESULT, we will lose our message, so we instead send up an error event, and
             // return that the attach was canceled
+            if (exception is null)
+            {
+                throw new InvalidOperationException("Attach failed without an exception.");
+            }
+
             OnStartDebuggingFailed(exception);
             return AD7_HRESULT.E_ATTACH_USER_CANCELED;
         }
@@ -263,8 +267,7 @@ namespace Microsoft.MIDebugEngine
         {
             LaunchOptions launchOptions;
 
-            var unixPort = port as IDebugUnixShellPort;
-            if (unixPort != null)
+            if (port is IDebugUnixShellPort unixPort)
             {
                 MIMode miMode;
                 if (_engineGuid == EngineConstants.GdbEngine)
@@ -319,7 +322,7 @@ namespace Microsoft.MIDebugEngine
             {
                 if (eventObject is AD7ProgramCreateEvent)
                 {
-                    Exception exception = null;
+                    Exception? exception = null;
 
                     try
                     {
@@ -336,7 +339,7 @@ namespace Microsoft.MIDebugEngine
                         // Return from the catch block so that we can let the exception unwind - the stack can get kind of big
                     }
 
-                    if (exception != null)
+                    if (exception is not null)
                     {
                         // If something goes wrong, report the error and then stop debugging. The SDM will drop errors
                         // from ContinueFromSynchronousEvent, so we want to deal with them ourself.
@@ -367,8 +370,8 @@ namespace Microsoft.MIDebugEngine
         // a location in the debuggee.
         public int CreatePendingBreakpoint(IDebugBreakpointRequest2 pBPRequest, out IDebugPendingBreakpoint2 ppPendingBP)
         {
-            Debug.Assert(_breakpointManager != null);
-            ppPendingBP = null;
+            Debug.Assert(_breakpointManager is not null);
+            ppPendingBP = null!; // nullable annotations don't work for COM methods
 
             try
             {
@@ -388,8 +391,8 @@ namespace Microsoft.MIDebugEngine
             {
                 s_bpLongBindTimeout = 250; // default is to wait a quarter of a second
 
-                object timeoutExtension = _configStore.GetEngineMetric("BpLongBindTimeoutExtension");
-                if (timeoutExtension != null && timeoutExtension is int && ((int)timeoutExtension == 1))
+                object? timeoutExtension = _configStore.GetEngineMetric("BpLongBindTimeoutExtension");
+                if (timeoutExtension is int timeoutExtensionValue && timeoutExtensionValue == 1)
                 {
                     s_bpLongBindTimeout = 50000; // if its set, make it longer
                 }
@@ -510,9 +513,9 @@ namespace Microsoft.MIDebugEngine
         // Determines if a process can be terminated.
         int IDebugEngineLaunch2.CanTerminateProcess(IDebugProcess2 process)
         {
-            Debug.Assert(_pollThread != null);
-            Debug.Assert(_engineCallback != null);
-            Debug.Assert(_debuggedProcess != null);
+            Debug.Assert(_pollThread is not null);
+            Debug.Assert(_engineCallback is not null);
+            Debug.Assert(_debuggedProcess is not null);
 
             AD_PROCESS_ID processId = EngineUtils.GetProcessId(process);
 
@@ -534,19 +537,24 @@ namespace Microsoft.MIDebugEngine
         // The IDebugEngineLaunch2::ResumeProcess method is called to start the process after the process has been successfully launched in a suspended state.
         int IDebugEngineLaunch2.LaunchSuspended(string pszServer, IDebugPort2 port, string exe, string args, string dir, string env, string options, enum_LAUNCH_FLAGS launchFlags, uint hStdInput, uint hStdOutput, uint hStdError, IDebugEventCallback2 ad7Callback, out IDebugProcess2 process)
         {
-            Debug.Assert(_pollThread == null);
-            Debug.Assert(_engineCallback == null);
-            Debug.Assert(_debuggedProcess == null);
+            Debug.Assert(_pollThread is null);
+            Debug.Assert(_engineCallback is null);
+            Debug.Assert(_debuggedProcess is null);
             Debug.Assert(_ad7ProgramId == Guid.Empty);
+
+            if (port is null)
+            {
+                throw new ArgumentNullException(nameof(port));
+            }
 
             // Check if the logger was enabled late.
             Logger.EnsureInitialized();
 
-            process = null;
+            process = null!; // nullable annotations don't work for COM methods
 
             _engineCallback = new EngineCallback(this, ad7Callback);
 
-            Exception exception;
+            Exception? exception = null;
 
             try
             {
@@ -557,7 +565,7 @@ namespace Microsoft.MIDebugEngine
 
                 StartDebugging(launchOptions);
 
-                EngineUtils.RequireOk(port.GetProcess(_debuggedProcess.Id, out process));
+                EngineUtils.RequireOk(port.GetProcess(DebuggedProcess.Id, out process));
                 return Constants.S_OK;
             }
             catch (Exception e) when (ExceptionHelper.BeforeCatch(e, Logger, reportOnlyCorrupting: true))
@@ -568,6 +576,11 @@ namespace Microsoft.MIDebugEngine
 
             // If we just return the exception as an HRESULT, we will lose our message, so we instead send up an error event, and then
             // return E_ABORT.
+            if (exception is null)
+            {
+                throw new InvalidOperationException("Launch failed without an exception.");
+            }
+
             OnStartDebuggingFailed(exception);
 
             return Constants.E_ABORT;
@@ -575,9 +588,9 @@ namespace Microsoft.MIDebugEngine
 
         private void StartDebugging(LaunchOptions launchOptions)
         {
-            Debug.Assert(_engineCallback != null);
-            Debug.Assert(_pollThread == null);
-            Debug.Assert(_debuggedProcess == null);
+            Debug.Assert(_engineCallback is not null);
+            Debug.Assert(_pollThread is null);
+            Debug.Assert(_debuggedProcess is null);
 
             // We are being asked to debug a process when we currently aren't debugging anything
             _pollThread = new WorkerThread(Logger);
@@ -595,7 +608,7 @@ namespace Microsoft.MIDebugEngine
                     {
                         // If there is an exception from the DebuggeedProcess constructor, it is our responsibility to dispose the DeviceAppLauncher,
                         // otherwise the DebuggedProcess object takes ownership.
-                        if (_debuggedProcess == null && launchOptions.DeviceAppLauncher != null)
+                        if (_debuggedProcess is null && launchOptions.DeviceAppLauncher is not null)
                         {
                             launchOptions.DeviceAppLauncher.Dispose();
                         }
@@ -626,8 +639,7 @@ namespace Microsoft.MIDebugEngine
             string description = EngineUtils.GetExceptionDescription(exception);
             string message = string.Format(CultureInfo.CurrentCulture, MICoreResources.Error_UnableToStartDebugging, description);
 
-            var initializationException = exception as MIDebuggerInitializeFailedException;
-            if (initializationException != null)
+            if (exception is MIDebuggerInitializeFailedException initializationException)
             {
                 string outputMessage = string.Join("\r\n", initializationException.OutputLines) + "\r\n";
 
@@ -641,9 +653,9 @@ namespace Microsoft.MIDebugEngine
         // Resume a process launched by IDebugEngineLaunch2.LaunchSuspended
         int IDebugEngineLaunch2.ResumeProcess(IDebugProcess2 process)
         {
-            Debug.Assert(_pollThread != null);
-            Debug.Assert(_engineCallback != null);
-            Debug.Assert(_debuggedProcess != null);
+            Debug.Assert(_pollThread is not null);
+            Debug.Assert(_engineCallback is not null);
+            Debug.Assert(_debuggedProcess is not null);
             Debug.Assert(_ad7ProgramId == Guid.Empty);
 
             try
@@ -691,9 +703,9 @@ namespace Microsoft.MIDebugEngine
         // The debugger will call IDebugEngineLaunch2::CanTerminateProcess before calling this method.
         int IDebugEngineLaunch2.TerminateProcess(IDebugProcess2 process)
         {
-            Debug.Assert(_pollThread != null);
-            Debug.Assert(_engineCallback != null);
-            Debug.Assert(_debuggedProcess != null);
+            Debug.Assert(_pollThread is not null);
+            Debug.Assert(_engineCallback is not null);
+            Debug.Assert(_debuggedProcess is not null);
 
             AD_PROCESS_ID processId = EngineUtils.GetProcessId(process);
             if (!EngineUtils.ProcIdEquals(processId, _debuggedProcess.Id))
@@ -754,7 +766,7 @@ namespace Microsoft.MIDebugEngine
         // Determines if a debug engine (DE) can detach from the program.
         public int CanDetach()
         {
-            bool canDetach = _debuggedProcess != null && _debuggedProcess.MICommandFactory.CanDetach();
+            bool canDetach = _debuggedProcess is not null && _debuggedProcess.MICommandFactory.CanDetach();
             return canDetach ? Constants.S_OK : Constants.S_FALSE;
         }
 
@@ -773,17 +785,18 @@ namespace Microsoft.MIDebugEngine
         public int Continue(IDebugThread2 pThread)
         {
             // VS Code currently isn't providing a thread Id in certain cases. Work around this by handling null values.
-            AD7Thread thread = pThread as AD7Thread;
+            AD7Thread? thread = pThread as AD7Thread;
+            DebuggedThread? debuggedThread = thread?.GetDebuggedThread();
 
             try
             {
                 if (_pollThread.IsPollThread())
                 {
-                    _debuggedProcess.Continue(thread?.GetDebuggedThread());
+                    _debuggedProcess.Continue(debuggedThread!);
                 }
                 else
                 {
-                    _pollThread.RunOperation(() => _debuggedProcess.Continue(thread?.GetDebuggedThread()));
+                    _pollThread.RunOperation(() => _debuggedProcess.Continue(debuggedThread!));
                 }
             }
             catch (InvalidCoreDumpOperationException)
@@ -830,14 +843,14 @@ namespace Microsoft.MIDebugEngine
             EngineUtils.CheckOk(docPosition.GetRange(startPosition, endPosition));
             List<IDebugCodeContext2> codeContexts = new List<IDebugCodeContext2>();
 
-            List<ulong> addresses = null;
+            List<ulong>? addresses = null;
             uint line = startPosition[0].dwLine + 1;
             _debuggedProcess.WorkerThread.RunOperation(async () =>
             {
                 addresses = await DebuggedProcess.StartAddressesForLine(documentName, line);
             });
 
-            if (addresses != null && addresses.Count > 0)
+            if (addresses is not null && addresses.Count > 0)
             {
                 foreach (var a in addresses)
                 {
@@ -855,7 +868,7 @@ namespace Microsoft.MIDebugEngine
                     return Constants.S_OK;
                 }
             }
-            ppEnum = null;
+            ppEnum = null!; // nullable annotations don't work for COM methods
             return Constants.E_FAIL;
         }
 
@@ -863,8 +876,8 @@ namespace Microsoft.MIDebugEngine
         // function to step into. This is not something that the SampleEngine supports.
         public int EnumCodePaths(string hint, IDebugCodeContext2 start, IDebugStackFrame2 frame, int fSource, out IEnumCodePaths2 pathEnum, out IDebugCodeContext2 safetyContext)
         {
-            pathEnum = null;
-            safetyContext = null;
+            pathEnum = null!; // nullable annotations don't work for COM methods
+            safetyContext = null!; // nullable annotations don't work for COM methods
             return Constants.E_NOTIMPL;
         }
 
@@ -873,8 +886,8 @@ namespace Microsoft.MIDebugEngine
         {
             DebuggedModule[] modules = _debuggedProcess.GetModules();
 
-            AD7Module[] moduleObjects = modules.Select(backendModule => backendModule.Client as AD7Module)
-                .Where(ad7Module => ad7Module != null) // Ignore any modules that we haven't quite sent the module load event for
+            AD7Module[] moduleObjects = modules.Select(backendModule => backendModule.Client)
+                .OfType<AD7Module>() // Ignore any modules that we haven't quite sent the module load event for
                 .ToArray();
             ppEnum = new Microsoft.MIDebugEngine.AD7ModuleEnum(moduleObjects);
 
@@ -884,14 +897,18 @@ namespace Microsoft.MIDebugEngine
         // EnumThreads is called by the debugger when it needs to enumerate the threads in the program.
         public int EnumThreads(out IEnumDebugThreads2 ppEnum)
         {
-            DebuggedThread[] threads = null;
+            DebuggedThread[] threads = Array.Empty<DebuggedThread>();
             DebuggedProcess.WorkerThread.RunOperation(async () => threads = await DebuggedProcess.ThreadCache.GetThreads());
 
             AD7Thread[] threadObjects = new AD7Thread[threads.Length];
             for (int i = 0; i < threads.Length; i++)
             {
-                Debug.Assert(threads[i].Client != null);
-                threadObjects[i] = (AD7Thread)threads[i].Client;
+                if (threads[i].Client is not AD7Thread threadObject)
+                {
+                    throw new InvalidOperationException("Thread client was not initialized.");
+                }
+
+                threadObjects[i] = threadObject;
             }
 
             ppEnum = new Microsoft.MIDebugEngine.AD7ThreadEnum(threadObjects);
@@ -923,7 +940,7 @@ namespace Microsoft.MIDebugEngine
         public int GetENCUpdate(out object update)
         {
             // The sample engine does not participate in managed edit & continue.
-            update = null;
+            update = null!; // nullable annotations don't work for COM methods
             return Constants.S_OK;
         }
 
@@ -949,7 +966,7 @@ namespace Microsoft.MIDebugEngine
         {
             // The Sample engine uses default transport and doesn't need to customize the name of the program,
             // so return NULL.
-            programName = null;
+            programName = null!; // nullable annotations don't work for COM methods
             return Constants.S_OK;
         }
 
@@ -965,16 +982,16 @@ namespace Microsoft.MIDebugEngine
 
         public int Step(IDebugThread2 pThread, enum_STEPKIND kind, enum_STEPUNIT unit)
         {
-            AD7Thread thread = (AD7Thread)pThread;
+            if (pThread is not AD7Thread thread)
+            {
+                return Constants.E_FAIL;
+            }
+
+            DebuggedThread debuggedThread = thread.GetDebuggedThread();
 
             try
             {
-                if (null == thread || null == thread.GetDebuggedThread())
-                {
-                    return Constants.E_FAIL;
-                }
-
-                _debuggedProcess.WorkerThread.RunOperation(() => _debuggedProcess.Step(thread.GetDebuggedThread().Id, kind, unit));
+                _debuggedProcess.WorkerThread.RunOperation(() => _debuggedProcess.Step(debuggedThread.Id, kind, unit));
             }
             catch (InvalidCoreDumpOperationException)
             {
@@ -1012,11 +1029,16 @@ namespace Microsoft.MIDebugEngine
         // stepping state cleared.
         public int ExecuteOnThread(IDebugThread2 pThread)
         {
-            AD7Thread thread = (AD7Thread)pThread;
+            if (pThread is not AD7Thread thread)
+            {
+                return Constants.E_FAIL;
+            }
+
+            DebuggedThread debuggedThread = thread.GetDebuggedThread();
 
             try
             {
-                _pollThread.RunOperation(() => _debuggedProcess.Execute(thread?.GetDebuggedThread()));
+                _pollThread.RunOperation(() => _debuggedProcess.Execute(debuggedThread));
             }
             catch (InvalidCoreDumpOperationException)
             {
@@ -1140,7 +1162,7 @@ namespace Microsoft.MIDebugEngine
         {
             pResult = 0;
             int hr = Constants.E_FAIL;
-            if (_debuggedProcess != null)
+            if (_debuggedProcess is not null)
             {
                 if (_debuggedProcess.Is64BitArch)
                 {
@@ -1161,7 +1183,8 @@ namespace Microsoft.MIDebugEngine
             int threadId = frame?.Thread.Id ?? -1;
             uint frameLevel = frame?.ThreadContext.Level ?? 0;
 
-            string[] matches = null;
+            result = null!; // nullable annotations don't work for COM methods
+            string[]? matches = null;
             if (EngineUtils.IsConsoleExecCmd(command, out string prefix, out string consoleCommand))
             {
                 _debuggedProcess.WorkerThread.RunOperation(async () =>
@@ -1169,14 +1192,21 @@ namespace Microsoft.MIDebugEngine
                     matches = await _debuggedProcess.MICommandFactory.AutoComplete(consoleCommand, threadId, frameLevel);
                 });
 
+                if (matches is null)
+                {
+                    return Constants.E_FAIL;
+                }
+
                 for (int i = 0; i < matches.Length; i++)
                 {
                     matches[i] = prefix + matches[i];
                 }
+
+                result = matches;
+                return Constants.S_OK;
             }
 
-            result = matches;
-            return matches != null ? Constants.S_OK : Constants.E_FAIL;
+            return Constants.E_FAIL;
         }
         #endregion
 
@@ -1187,7 +1217,7 @@ namespace Microsoft.MIDebugEngine
         {
             Debug.Fail("This function is not called by the debugger");
 
-            programs = null;
+            programs = null!; // nullable annotations don't work for COM methods
             return Constants.E_NOTIMPL;
         }
 
@@ -1202,7 +1232,7 @@ namespace Microsoft.MIDebugEngine
         {
             Debug.Fail("This function is not called by the debugger");
 
-            process = null;
+            process = null!; // nullable annotations don't work for COM methods
             return Constants.E_NOTIMPL;
         }
 

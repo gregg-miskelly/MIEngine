@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using MICore;
@@ -32,14 +32,14 @@ namespace Microsoft.MIDebugEngine
             this.EndPosition = this.BeginPosition;
         }
 
-        public static MITextPosition TryParse(DebuggedProcess process, TupleValue miTuple)
+        public static MITextPosition? TryParse(DebuggedProcess process, TupleValue miTuple)
         {
-            string filename = process.GetMappedFileFromTuple(miTuple);
+            string? filename = process.GetMappedFileFromTuple(miTuple);
 
-            if (string.IsNullOrWhiteSpace(filename))
+            if (IsNullOrWhiteSpace(filename))
                 return null;
 
-            filename = PlatformUtilities.PathToHostOSPath(filename);
+            filename = PlatformUtilities.PathToHostOSPath(filename)!;
 
             uint? line = miTuple.TryFindUint("line");
             if (!line.HasValue || line.Value == 0)

@@ -14,11 +14,11 @@ namespace Microsoft.MIDebugEngine
     {
         private AD7Engine _engine;
         internal ulong Addr { get; set; }
-        private AD7DocumentContext _documentContext;
-        private string _functionName;
+        private AD7DocumentContext? _documentContext;
+        private string? _functionName;
         private enum_BP_TYPE _breakType;
 
-        public AD7BreakpointResolution(AD7Engine engine, bool isDataBreakpoint, ulong address, /*optional*/ string functionName, /*optional*/ AD7DocumentContext documentContext)
+        public AD7BreakpointResolution(AD7Engine engine, bool isDataBreakpoint, ulong address, string? functionName, AD7DocumentContext? documentContext)
         {
             _engine = engine;
             Addr = address;

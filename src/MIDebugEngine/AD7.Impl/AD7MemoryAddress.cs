@@ -15,11 +15,10 @@ namespace Microsoft.MIDebugEngine
     {
         private readonly AD7Engine _engine;
         private readonly ulong _address;
-        /*OPTIONAL*/
-        private string _functionName;
-        private IDebugDocumentContext2 _documentContext;
+        private string? _functionName;
+        private IDebugDocumentContext2? _documentContext;
 
-        public AD7MemoryAddress(AD7Engine engine, ulong address, /*OPTIONAL*/ string functionName)
+        public AD7MemoryAddress(AD7Engine engine, ulong address, string? functionName)
         {
             _engine = engine;
             _address = address;
@@ -29,7 +28,7 @@ namespace Microsoft.MIDebugEngine
         internal ulong Address { get { return _address; } }
         internal AD7Engine Engine { get { return _engine; } }
 
-        public void SetDocumentContext(IDebugDocumentContext2 docContext)
+        public void SetDocumentContext(IDebugDocumentContext2? docContext)
         {
             _documentContext = docContext;
         }
@@ -56,7 +55,7 @@ namespace Microsoft.MIDebugEngine
             {
                 for (uint c = 0; c < compareToLength; c++)
                 {
-                    AD7MemoryAddress compareTo = compareToItems[c] as AD7MemoryAddress;
+                    AD7MemoryAddress? compareTo = compareToItems[c] as AD7MemoryAddress;
                     if (compareTo == null)
                     {
                         continue;
@@ -103,7 +102,7 @@ namespace Microsoft.MIDebugEngine
                                 break;
                             }
                             string funcThis = Engine.GetAddressDescription(_address);
-                            if (string.IsNullOrEmpty(funcThis))
+                            if (IsNullOrEmpty(funcThis))
                             {
                                 result = false;
                                 break;
@@ -116,7 +115,7 @@ namespace Microsoft.MIDebugEngine
                             result = (_address == compareTo._address);
                             if (result == false)
                             {
-                                DebuggedModule module = _engine.DebuggedProcess.ResolveAddress(_address);
+                                DebuggedModule? module = _engine.DebuggedProcess.ResolveAddress(_address);
 
                                 if (module != null)
                                 {
@@ -178,7 +177,7 @@ namespace Microsoft.MIDebugEngine
                 if ((dwFields & enum_CONTEXT_INFO_FIELDS.CIF_ADDRESSOFFSET) != 0) { }
                 if ((dwFields & enum_CONTEXT_INFO_FIELDS.CIF_MODULEURL) != 0)
                 {
-                    DebuggedModule module = _engine.DebuggedProcess.ResolveAddress(_address);
+                    DebuggedModule? module = _engine.DebuggedProcess.ResolveAddress(_address);
                     if (module != null)
                     {
                         pinfo[0].bstrModuleUrl = module.Name;
@@ -187,12 +186,12 @@ namespace Microsoft.MIDebugEngine
                 }
                 if ((dwFields & enum_CONTEXT_INFO_FIELDS.CIF_FUNCTION) != 0)
                 {
-                    if (string.IsNullOrEmpty(_functionName))
+                    if (IsNullOrEmpty(_functionName))
                     {
                         _functionName = Engine.GetAddressDescription(_address);
                     }
 
-                    if (!(string.IsNullOrEmpty(_functionName)))
+                    if (!(IsNullOrEmpty(_functionName)))
                     {
                         pinfo[0].bstrFunction = _functionName;
                         pinfo[0].dwFields |= enum_CONTEXT_INFO_FIELDS.CIF_FUNCTION;
@@ -236,7 +235,7 @@ namespace Microsoft.MIDebugEngine
             if (_documentContext == null)
                 hr = Constants.S_FALSE;
 
-            ppSrcCxt = _documentContext;
+            ppSrcCxt = _documentContext!;
             return hr;
         }
 

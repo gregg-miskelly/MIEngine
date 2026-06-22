@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading;
-using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Runtime.ExceptionServices;
 using Microsoft.DebugEngineHost;
@@ -29,7 +28,7 @@ namespace Microsoft.MIDebugEngine
         private readonly Object _eventLock = new object(); // Locking on an event directly can cause Mono to stop responding.
         private readonly Queue<Operation> _postedOperations; // queue of fire-and-forget operations
 
-        public event EventHandler<Exception> PostedOperationErrorEvent;
+        public event EventHandler<Exception>? PostedOperationErrorEvent;
 
         private class OperationDescriptor
         {
@@ -37,8 +36,8 @@ namespace Microsoft.MIDebugEngine
             /// Delegate that was added via 'RunOperation'. Is of type 'Operation' or 'AsyncOperation'
             /// </summary>
             public readonly Delegate Target;
-            public ExceptionDispatchInfo ExceptionDispatchInfo;
-            public Task Task;
+            public ExceptionDispatchInfo? ExceptionDispatchInfo;
+            public Task? Task;
             private bool _isStarted;
             private bool _isComplete;
 
@@ -68,7 +67,7 @@ namespace Microsoft.MIDebugEngine
                 _isStarted = true;
             }
         }
-        private OperationDescriptor _runningOp;
+        private OperationDescriptor? _runningOp;
 
         private Thread _thread;
         private volatile bool _isClosed;
@@ -255,7 +254,7 @@ namespace Microsoft.MIDebugEngine
                 {
                     _runningOpCompleteEvent.Reset();
 
-                    OperationDescriptor runningOp = new OperationDescriptor(new AsyncOperation(() => { return op(waitLoop); }));
+                    OperationDescriptor runningOp = new OperationDescriptor(new AsyncOperation(() => op(waitLoop)));
                     _runningOp = runningOp;
 
                     _opSet.Set();
@@ -292,15 +291,14 @@ namespace Microsoft.MIDebugEngine
                 {
                     ranOperation = false;
 
-                    OperationDescriptor runningOp = _runningOp;
-                    if (runningOp != null && !runningOp.IsStarted)
+                    OperationDescriptor? runningOp = _runningOp;
+                    if (runningOp is not null && !runningOp.IsStarted)
                     {
                         runningOp.MarkStarted();
                         ranOperation = true;
 
                         bool completeAsync = false;
-                        Operation syncOp = runningOp.Target as Operation;
-                        if (syncOp != null)
+                        if (runningOp.Target is Operation syncOp)
                         {
                             try
                             {
@@ -313,7 +311,10 @@ namespace Microsoft.MIDebugEngine
                         }
                         else
                         {
-                            AsyncOperation asyncOp = (AsyncOperation)runningOp.Target;
+                            if (runningOp.Target is not AsyncOperation asyncOp)
+                            {
+                                throw new InvalidOperationException("Unexpected operation type.");
+                            }
 
                             try
                             {
@@ -324,7 +325,7 @@ namespace Microsoft.MIDebugEngine
                                 runningOp.ExceptionDispatchInfo = ExceptionDispatchInfo.Capture(opException);
                             }
 
-                            if (runningOp.Task != null)
+                            if (runningOp.Task is not null)
                             {
                                 runningOp.Task.ContinueWith(OnAsyncRunningOpComplete, TaskContinuationOptions.ExecuteSynchronously);
                                 completeAsync = true;
@@ -342,7 +343,7 @@ namespace Microsoft.MIDebugEngine
                     }
 
 
-                    Operation postedOperation = null;
+                    Operation? postedOperation = null;
                     lock (_postedOperations)
                     {
                         if (_postedOperations.Count > 0)
@@ -351,7 +352,7 @@ namespace Microsoft.MIDebugEngine
                         }
                     }
 
-                    if (postedOperation != null)
+                    if (postedOperation is not null)
                     {
                         ranOperation = true;
 
@@ -361,10 +362,7 @@ namespace Microsoft.MIDebugEngine
                         }
                         catch (Exception e) when (ExceptionHelper.BeforeCatch(e, Logger, reportOnlyCorrupting: false))
                         {
-                            if (PostedOperationErrorEvent != null)
-                            {
-                                PostedOperationErrorEvent(this, e);
-                            }
+                            PostedOperationErrorEvent?.Invoke(this, e);
                         }
                     }
                 }
@@ -374,21 +372,29 @@ namespace Microsoft.MIDebugEngine
 
         internal void OnAsyncRunningOpComplete(Task t)
         {
-            Debug.Assert(_runningOp != null, "How did m_runningOp get cleared?");
-            Debug.Assert(t == _runningOp.Task, "Why is a different task completing?");
+            OperationDescriptor? runningOp = _runningOp;
+            if (runningOp is null)
+            {
+                throw new InvalidOperationException("How did m_runningOp get cleared?");
+            }
+
+            if (runningOp.Task is null || t != runningOp.Task)
+            {
+                throw new InvalidOperationException("Why is a different task completing?");
+            }
 
             if (t.Exception != null)
             {
                 if (t.Exception.InnerException != null)
                 {
-                    _runningOp.ExceptionDispatchInfo = ExceptionDispatchInfo.Capture(t.Exception.InnerException);
+                    runningOp.ExceptionDispatchInfo = ExceptionDispatchInfo.Capture(t.Exception.InnerException);
                 }
                 else
                 {
-                    _runningOp.ExceptionDispatchInfo = ExceptionDispatchInfo.Capture(t.Exception);
+                    runningOp.ExceptionDispatchInfo = ExceptionDispatchInfo.Capture(t.Exception);
                 }
             }
-            _runningOp.MarkComplete();
+            runningOp.MarkComplete();
             _runningOp = null;
             _runningOpCompleteEvent.Set();
         }

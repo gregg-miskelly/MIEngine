@@ -1,11 +1,10 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
 using MICore;
 using Microsoft.DebugEngineHost;
-using System.Diagnostics;
 using System.Linq;
 using System.Globalization;
 
@@ -24,18 +23,18 @@ namespace Microsoft.MIDebugEngine
 
         public bool DecodeTelemetryEvent(Results results, out string eventName, out KeyValuePair<string, object>[] properties)
         {
-            properties = null;
+            properties = null!;
 
             // NOTE: the message event is an MI Extension from clrdbg, though we could use in it the future for other debuggers
             eventName = results.TryFindString("event-name");
-            if (string.IsNullOrEmpty(eventName) || !char.IsLetter(eventName[0]) || !eventName.Contains('/'))
+            if (IsNullOrEmpty(eventName) || !char.IsLetter(eventName[0]) || !eventName.Contains('/'))
             {
                 Debug.Fail("Bogus telemetry event. 'Event-name' property is missing or invalid.");
                 return false;
             }
 
-            TupleValue tuple;
-            if (!results.TryFind("properties", out tuple))
+            TupleValue? tuple;
+            if (!results.TryFind("properties", out tuple) || tuple is null)
             {
                 Debug.Fail("Bogus message event, missing 'properties' property");
                 return false;
@@ -44,12 +43,12 @@ namespace Microsoft.MIDebugEngine
             List<KeyValuePair<string, object>> propertyList = new List<KeyValuePair<string, object>>(tuple.Content.Count);
             foreach (NamedResultValue pair in tuple.Content)
             {
-                ConstValue resultValue = pair.Value as ConstValue;
+                ConstValue? resultValue = pair.Value as ConstValue;
                 if (resultValue == null)
                     continue;
 
                 string content = resultValue.Content;
-                if (string.IsNullOrEmpty(content))
+                if (IsNullOrEmpty(content))
                     continue;
 
                 object value = content;
@@ -74,12 +73,12 @@ namespace Microsoft.MIDebugEngine
             return true;
         }
 
-        public void SendDebuggerAborted(MICommandFactory commandFactory, string lastSentCommandName, /*OPTIONAL*/ string debuggerExitCode)
+        public void SendDebuggerAborted(MICommandFactory commandFactory, string lastSentCommandName, string? debuggerExitCode)
         {
             List<KeyValuePair<string, object>> eventProperties = new List<KeyValuePair<string, object>>();
             eventProperties.Add(new KeyValuePair<string, object>(Property_DebuggerName, commandFactory.Name));
             eventProperties.Add(new KeyValuePair<string, object>(Property_LastSentCommandName, lastSentCommandName));
-            if (!string.IsNullOrEmpty(debuggerExitCode))
+            if (!IsNullOrEmpty(debuggerExitCode))
             {
                 eventProperties.Add(new KeyValuePair<string, object>(Property_DebuggerExitCode, debuggerExitCode));
             }

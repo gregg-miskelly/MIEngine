@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
@@ -51,9 +51,12 @@ namespace Microsoft.MIDebugEngine.Natvis
 
         private TypeName()
         {
+            FullyQualifiedName = string.Empty;
             Args = new List<TypeName>();
             Qualifiers = new List<TypeName>();
-            Parameters = null;
+            BaseName = string.Empty;
+            Parameters = new List<TypeName>();
+            Dimensions = Array.Empty<int>();
             IsWildcard = false;
             IsArray = false;
         }
@@ -139,13 +142,13 @@ namespace Microsoft.MIDebugEngine.Natvis
         /// </summary>
         /// <param name="fullyQualifiedName"></param>
         /// <returns></returns>
-        public static TypeName Parse(string fullyQualifiedName, ILogChannel logger)
+        public static TypeName? Parse(string fullyQualifiedName, ILogChannel logger)
         {
-            if (String.IsNullOrEmpty(fullyQualifiedName))
+            if (IsNullOrEmpty(fullyQualifiedName))
                 return null;
-            string rest = null;
-            TypeName t = MatchTypeName(fullyQualifiedName.Trim(), out rest);
-            if (!String.IsNullOrWhiteSpace(rest))
+            string rest = string.Empty;
+            TypeName? t = MatchTypeName(fullyQualifiedName.Trim(), out rest);
+            if (!IsNullOrWhiteSpace(rest))
             {
                 logger.WriteLine(LogLevel.Error, "Natvis failed to parse typename: {0}", fullyQualifiedName);
                 return null;
@@ -159,25 +162,25 @@ namespace Microsoft.MIDebugEngine.Natvis
         /// <param name="name">Trimmed string containing a type name</param>
         /// <param name="rest">Trimmed remainder of string after name match</param>
         /// <returns></returns>
-        private static TypeName MatchTypeName(string name, out string rest)
+        private static TypeName? MatchTypeName(string name, out string rest)
         {
             string original = name;
             if (name.StartsWith("const ", StringComparison.Ordinal))
             {
                 name = name.Substring(6).Trim();    // TODO: we just ignore const
             }
-            TypeName t = MatchSimpleTypeName(name, out rest);
-            if (t == null)
+            TypeName? t = MatchSimpleTypeName(name, out rest);
+            if (t is null)
             {
                 List<TypeName> qualifiers = new List<TypeName>();
                 t = MatchUnqualifiedName(name, out rest);
-                while (t != null && rest.Length > 2 && rest.StartsWith("::", StringComparison.Ordinal))
+                while (t is not null && rest.Length > 2 && rest.StartsWith("::", StringComparison.Ordinal))
                 {
                     // process qualifiers
                     qualifiers.Add(t);
                     t = MatchUnqualifiedName(rest.Substring(2).Trim(), out rest);
                 }
-                if (t == null)
+                if (t is null)
                 {
                     return null;
                 }
@@ -219,7 +222,7 @@ namespace Microsoft.MIDebugEngine.Natvis
             return t;
         }
 
-        private static TypeName MatchSimpleTypeName(string name, out string rest)
+        private static TypeName? MatchSimpleTypeName(string name, out string rest)
         {
             rest = String.Empty;
             var m = s_simpleType.Match(name);
@@ -240,10 +243,10 @@ namespace Microsoft.MIDebugEngine.Natvis
             return null;
         }
 
-        private static TypeName MatchUnqualifiedName(string name, out string rest)
+        private static TypeName? MatchUnqualifiedName(string name, out string rest)
         {
             string basename = MatchIdentifier(name, out rest);
-            if (String.IsNullOrEmpty(basename))
+            if (IsNullOrEmpty(basename))
             {
                 return null;
             }
@@ -305,9 +308,9 @@ namespace Microsoft.MIDebugEngine.Natvis
 
         private static bool MatchTemplateList(string templist, out string rest, List<TypeName> args)
         {
-            TypeName t;
+            TypeName? t;
             string arg = MatchConstant(templist, out rest); // no constants allowed in parameter lists
-            if (!String.IsNullOrEmpty(arg))
+            if (!IsNullOrEmpty(arg))
             {
                 var constantArg = new TypeName(arg);
                 constantArg.FullyQualifiedName = arg;
@@ -337,13 +340,13 @@ namespace Microsoft.MIDebugEngine.Natvis
             rest = plist;
             while (rest.Length > 0 && rest[0] != ')')
             {
-                TypeName t;
-                if ((t = MatchTypeName(rest, out rest)) == null)
+                TypeName? t;
+                if ((t = MatchTypeName(rest, out rest)) is null)
                 {
                     return false;
                 }
                 args.Add(t);
-                if (t != null && rest.Length > 1 && rest[0] == ',')
+                if (rest.Length > 1 && rest[0] == ',')
                 {
                     rest = rest.Substring(1).Trim();
                 }

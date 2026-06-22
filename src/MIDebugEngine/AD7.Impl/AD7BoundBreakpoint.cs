@@ -4,7 +4,6 @@
 using Microsoft.DebugEngineHost;
 using Microsoft.VisualStudio.Debugger.Interop;
 using System;
-using System.Diagnostics;
 using System.Threading.Tasks;
 
 namespace Microsoft.MIDebugEngine
@@ -62,8 +61,8 @@ namespace Microsoft.MIDebugEngine
                 {
                     lock (_engine.DebuggedProcess.DataBreakpointVariables)
                     {
-                        string addressId = _pendingBreakpoint.AddressId;
-                        if (addressId != null)
+                        string? addressId = _pendingBreakpoint.AddressId;
+                        if (addressId is not null)
                         {
                             Debug.Assert(_engine.DebuggedProcess.DataBreakpointVariables.Contains(addressId));
                             _engine.DebuggedProcess.DataBreakpointVariables.Remove(addressId);
@@ -94,8 +93,8 @@ namespace Microsoft.MIDebugEngine
             {
                 lock (_engine.DebuggedProcess.DataBreakpointVariables)
                 {
-                    string addressId = _pendingBreakpoint.AddressId;
-                    if (addressId != null)
+                    string? addressId = _pendingBreakpoint.AddressId;
+                    if (addressId is not null)
                     {
                         bool InDataBreakpointVariables = _engine.DebuggedProcess.DataBreakpointVariables.Contains(addressId);
                         if (Enabled && !InDataBreakpointVariables)
@@ -237,8 +236,8 @@ namespace Microsoft.MIDebugEngine
                     return;
             }
 
-            PendingBreakpoint bp = _pendingBreakpoint?.PendingBreakpoint;
-            if (bp != null && _engine?.DebuggedProcess != null)
+            PendingBreakpoint? bp = _pendingBreakpoint?.PendingBreakpoint;
+            if (bp is not null && _engine?.DebuggedProcess is not null)
             {
                 await bp.SetBreakAfterAsync(ignoreCount, _engine.DebuggedProcess);
             }

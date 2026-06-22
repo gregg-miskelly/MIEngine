@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using Microsoft.VisualStudio.Debugger.Interop;
-using System.Diagnostics;
 using System.Globalization;
 using MICore;
 using System.Threading.Tasks;
@@ -23,7 +22,7 @@ namespace Microsoft.MIDebugEngine
 
         internal static string GetAddressDescription(DebuggedProcess proc, ulong ip)
         {
-            string description = null;
+            string description = null!;
             proc.WorkerThread.RunOperation(async () =>
             {
                 description = await EngineUtils.GetAddressDescriptionAsync(proc, ip);
@@ -35,13 +34,13 @@ namespace Microsoft.MIDebugEngine
 
         internal static async Task<string> GetAddressDescriptionAsync(DebuggedProcess proc, ulong ip)
         {
-            string location = null;
-            IEnumerable<DisasmInstruction> instructions = await proc.Disassembly.FetchInstructions(ip, 1);
+            string? location = null;
+            IEnumerable<DisasmInstruction>? instructions = await proc.Disassembly.FetchInstructions(ip, 1);
             if (instructions != null)
             {
                 foreach (DisasmInstruction instruction in instructions)
                 {
-                    if (location == null && !String.IsNullOrEmpty(instruction.Symbol))
+                    if (location == null && !IsNullOrEmpty(instruction.Symbol))
                     {
                         location = instruction.Symbol;
                         break;
@@ -49,7 +48,7 @@ namespace Microsoft.MIDebugEngine
                 }
             }
 
-            if (location == null)
+            if (location is null)
             {
                 string addrFormat = proc.Is64BitArch ? "x16" : "x8";
                 location = ip.ToString(addrFormat, CultureInfo.InvariantCulture);
@@ -142,7 +141,7 @@ namespace Microsoft.MIDebugEngine
         // of the available registers.
         public class RegisterNameMap
         {
-            private Entry[] _map;
+            private Entry[] _map = null!;
             private struct Entry
             {
                 public readonly string Name;
@@ -299,7 +298,7 @@ namespace Microsoft.MIDebugEngine
 
         internal class SignalMap : Dictionary<string, uint>
         {
-            private static SignalMap s_instance;
+            private static SignalMap? s_instance;
             private SignalMap()
             {
                 this["SIGHUP"] = 1;
@@ -341,7 +340,7 @@ namespace Microsoft.MIDebugEngine
             {
                 get
                 {
-                    if (s_instance == null)
+                    if (s_instance is null)
                     {
                         s_instance = new SignalMap();
                     }

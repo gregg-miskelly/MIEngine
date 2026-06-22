@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
@@ -43,8 +43,8 @@ namespace Microsoft.MIDebugEngine
         {
             if (((dwFlags & enum_EVALFLAGS.EVAL_NOSIDEEFFECTS) != 0 && (dwFlags & enum_EVALFLAGS.EVAL_ALLOWBPS) == 0) && _var.IsVisualized)
             {
-                IVariableInformation variable = _engine.DebuggedProcess.Natvis.Cache.Lookup(_var);
-                if (variable == null)
+                IVariableInformation? variable = _engine.DebuggedProcess.Natvis.Cache.Lookup(_var);
+                if (variable is null)
                 {
                     _var.AsyncError(pExprCallback, new AD7ErrorProperty(_var.Name, ResourceStrings.NoSideEffectsVisualizerMessage));
                 }
@@ -83,11 +83,11 @@ namespace Microsoft.MIDebugEngine
 
         private int EvaluateSyncInternal(enum_EVALFLAGS dwFlags, DAPEvalFlags dapFlags, uint dwTimeout, IDebugEventCallback2 pExprCallback, out IDebugProperty2 ppResult)
         {
-            ppResult = null;
+            ppResult = null!; // nullable annotations don't work for COM methods
             if ((dwFlags & enum_EVALFLAGS.EVAL_NOSIDEEFFECTS) != 0 && _var.IsVisualized)
             {
-                IVariableInformation variable = _engine.DebuggedProcess.Natvis.Cache.Lookup(_var);
-                if (variable == null)
+                IVariableInformation? variable = _engine.DebuggedProcess.Natvis.Cache.Lookup(_var);
+                if (variable is null)
                 {
                     ppResult = new AD7ErrorProperty(_var.Name, ResourceStrings.NoSideEffectsVisualizerMessage);
                 }

@@ -1,9 +1,8 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
@@ -94,12 +93,12 @@ namespace Microsoft.MIDebugEngine
         {
             outputPath = "";
 
-            if (String.IsNullOrEmpty(miDebuggerPath))
+            if (IsNullOrEmpty(miDebuggerPath))
             {
                 return false;
             }
 
-            string cygpathPath = Path.Combine(Path.GetDirectoryName(miDebuggerPath), "cygpath.exe");
+            string? cygpathPath = Path.Combine(Path.GetDirectoryName(miDebuggerPath), "cygpath.exe");
             if (!File.Exists(cygpathPath))
             {
                 return false;
@@ -156,14 +155,14 @@ namespace Microsoft.MIDebugEngine
                     command = String.Concat(cygpathPath, " -u ", inputPath);
                 }
                 if (!CreateProcess(
-                        null,
+                        null!,
                         command,
                         ref processSecurityAttributes,
                         ref threadSecurityAttributes,
                         true,
                         flags,
                         IntPtr.Zero,
-                        null,
+                        null!,
                         ref startupInfo,
                         out processInfo
                         ))
@@ -198,7 +197,7 @@ namespace Microsoft.MIDebugEngine
 
                 FileStream fs = new FileStream(stdoutRead, FileAccess.Read);
                 StreamReader sr = new StreamReader(fs);
-                outputPath = sr.ReadLine();
+                outputPath = sr.ReadLine() ?? "";
             }
             finally
             {

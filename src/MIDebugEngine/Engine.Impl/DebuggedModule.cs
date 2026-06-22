@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
@@ -117,7 +117,7 @@ namespace Microsoft.MIDebugEngine
 
         public uint GetLoadOrder() { return _loadOrder; }
 
-        public Object Client { get; internal set; }      // really AD7Module
+        public Object? Client { get; internal set; }      // really AD7Module
         public bool IgnoreSource { get; internal set; }     // filter out source references from this module
     }
 }

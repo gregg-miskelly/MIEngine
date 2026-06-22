@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using Microsoft.VisualStudio.Debugger.Interop;
-using System.Diagnostics;
 
 namespace Microsoft.MIDebugEngine
 {
@@ -48,7 +47,7 @@ namespace Microsoft.MIDebugEngine
         {
             // Since we are using default transport and don't want to customize the process name, this method doesn't need
             // to be implemented.
-            processName = null;
+            processName = null!; // nullable annotations don't work for COM methods
             return Constants.E_NOTIMPL;
         }
 
@@ -57,7 +56,7 @@ namespace Microsoft.MIDebugEngine
         {
             // Since we are using default transport and don't want to customize the process name, this method doesn't need
             // to be implemented.
-            programName = null;
+            programName = null!; // nullable annotations don't work for COM methods
             return Constants.E_NOTIMPL;
         }
 

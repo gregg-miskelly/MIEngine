@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
@@ -19,7 +19,11 @@ namespace Microsoft.MIDebugEngine
         {
             _engine = engine;
             _scope = scope;
-            AD7MemoryAddress addr = pCodeContext as AD7MemoryAddress;
+            if (pCodeContext is not AD7MemoryAddress addr)
+            {
+                throw new ArgumentException(nameof(pCodeContext));
+            }
+
             _addr = addr.Address;
         }
 
@@ -33,8 +37,7 @@ namespace Microsoft.MIDebugEngine
 
         public int GetCodeLocationId(IDebugCodeContext2 pCodeContext, out ulong puCodeLocationId)
         {
-            AD7MemoryAddress addr = pCodeContext as AD7MemoryAddress;
-            if (addr != null)
+            if (pCodeContext is AD7MemoryAddress addr)
             {
                 puCodeLocationId = addr.Address;
                 return Constants.S_OK;
@@ -53,7 +56,7 @@ namespace Microsoft.MIDebugEngine
         public int GetDocument(string bstrDocumentUrl, out IDebugDocument2 ppDocument)
         {
             // Mixed mode not yet
-            ppDocument = null;
+            ppDocument = null!; // nullable annotations don't work for COM methods
             return Constants.S_FALSE;
         }
 
@@ -102,12 +105,12 @@ namespace Microsoft.MIDebugEngine
         {
             uint iOp = 0;
 
-            IEnumerable<DisasmInstruction> instructions = null;
+            ICollection<DisasmInstruction>? instructions = null;
             _engine.DebuggedProcess.WorkerThread.RunOperation(async () =>
             {
                 instructions = await _engine.DebuggedProcess.Disassembly.FetchInstructions(_addr, (int)dwInstructions);
             });
-            if (instructions == null || (instructions.First().Addr - _addr > dwInstructions))
+            if (instructions is null || instructions.Count == 0)
             {
                 // bad address range, return '??'
                 for (iOp = 0; iOp < dwInstructions; _addr++, ++iOp)
@@ -118,8 +121,19 @@ namespace Microsoft.MIDebugEngine
                 return Constants.S_OK;
             }
 
+            ulong firstInstructionAddress = instructions.First().Addr;
+            if (firstInstructionAddress - _addr > dwInstructions)
+            {
+                for (iOp = 0; iOp < dwInstructions; _addr++, ++iOp)
+                {
+                    prgDisassembly[iOp] = FetchBadInstruction(dwFields);
+                }
+                pdwInstructionsRead = iOp;
+                return Constants.S_OK;
+            }
+
             // return '??' for bad addresses at start of range
-            for (iOp = 0; _addr < instructions.First().Addr; _addr++, iOp++)
+            for (iOp = 0; _addr < firstInstructionAddress; _addr++, iOp++)
             {
                 prgDisassembly[iOp] = FetchBadInstruction(dwFields);
             }
@@ -161,7 +175,7 @@ namespace Microsoft.MIDebugEngine
 
                 if ((dwFields & enum_DISASSEMBLY_STREAM_FIELDS.DSF_CODEBYTES) != 0)
                 {
-                    if (!string.IsNullOrWhiteSpace(instruction.CodeBytes))
+                    if (!IsNullOrWhiteSpace(instruction.CodeBytes))
                     {
                         prgDisassembly[iOp].dwFields |= enum_DISASSEMBLY_STREAM_FIELDS.DSF_CODEBYTES;
                         prgDisassembly[iOp].bstrCodeBytes = instruction.CodeBytes;
@@ -192,12 +206,12 @@ namespace Microsoft.MIDebugEngine
 
         private int SeekForward(long iInstructions)
         {
-            ICollection<DisasmInstruction> instructions = null;
+            ICollection<DisasmInstruction>? instructions = null;
             _engine.DebuggedProcess.WorkerThread.RunOperation(async () =>
             {
-                instructions = await _engine.DebuggedProcess.Disassembly.FetchInstructions(_addr, (int)iInstructions+1);
+                instructions = await _engine.DebuggedProcess.Disassembly.FetchInstructions(_addr, (int)iInstructions + 1);
             });
-            if (instructions == null)
+            if (instructions is null || instructions.Count == 0)
             {
                 // bad address range, no instructions. 
                 _addr = (ulong)((long)_addr + iInstructions);  // forward iInstructions bytes
@@ -225,7 +239,11 @@ namespace Microsoft.MIDebugEngine
         {
             if (dwSeekStart == enum_SEEK_START.SEEK_START_CODECONTEXT)
             {
-                AD7MemoryAddress addr = pCodeContext as AD7MemoryAddress;
+                if (pCodeContext is not AD7MemoryAddress addr)
+                {
+                    throw new ArgumentException(nameof(pCodeContext));
+                }
+
                 _addr = addr.Address;
             }
             else if (dwSeekStart == enum_SEEK_START.SEEK_START_CODELOCID)

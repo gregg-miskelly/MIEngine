@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
@@ -50,9 +50,9 @@ namespace Microsoft.MIDebugEngine.Natvis
                 return CompareTo(other) == 0;
             }
 
-            public override bool Equals(object obj)
+            public override bool Equals(object? obj)
             {
-                return Equals((VisualizerKey)obj);
+                return obj is VisualizerKey other && Equals(other);
             }
 
             public override int GetHashCode()
@@ -70,24 +70,24 @@ namespace Microsoft.MIDebugEngine.Natvis
 
         internal void Add(IVariableInformation var)
         {
-            if (var is VisualizerWrapper)
+            if (var is VisualizerWrapper visualizer)
             {
                 lock (_cache)
                 {
                     VisualizerKey key = new VisualizerKey(var);
                     if (!_cache.ContainsKey(key))
-                        _cache.Add(key, (var as VisualizerWrapper));
+                        _cache.Add(key, visualizer);
                 }
             }
         }
 
-        internal IVariableInformation Lookup(IVariableInformation var)
+        internal IVariableInformation? Lookup(IVariableInformation var)
         {
             if (var is VisualizerWrapper)
             {
                 lock (_cache)
                 {
-                    VisualizerWrapper result = null;
+                    VisualizerWrapper? result = null;
                     _cache.TryGetValue(new VisualizerKey(var), out result);
                     return result;
                 }
@@ -104,13 +104,13 @@ namespace Microsoft.MIDebugEngine.Natvis
         ///     2. null if a VisualizedView that is not in the cache already
         ///     2. Lookup(var) if in the cache
         /// </returns>
-        internal IVariableInformation VisualizeOnRefresh(IVariableInformation var)
+        internal IVariableInformation? VisualizeOnRefresh(IVariableInformation var)
         {
             if (var is VisualizerWrapper)
             {
                 lock (_cache)
                 {
-                    VisualizerWrapper result = null;
+                    VisualizerWrapper? result = null;
                     if (_cache.TryGetValue(new VisualizerKey(var), out result))
                     {
                         return result;

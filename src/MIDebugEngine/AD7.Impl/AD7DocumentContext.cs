@@ -1,11 +1,10 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
 using System.Text;
 using Microsoft.VisualStudio.Debugger.Interop;
-using System.Diagnostics;
 using MICore;
 
 namespace Microsoft.MIDebugEngine
@@ -39,7 +38,7 @@ namespace Microsoft.MIDebugEngine
         // the code contexts are always memory addresses.
         int IDebugDocumentContext2.EnumCodeContexts(out IEnumDebugCodeContexts2 ppEnumCodeCxts)
         {
-            ppEnumCodeCxts = null;
+            ppEnumCodeCxts = null!; // nullable annotations don't work for COM methods
 
             if (_codeContext == null)
             {
@@ -68,7 +67,7 @@ namespace Microsoft.MIDebugEngine
         // does not do this, this method returns E_NOTIMPL.
         int IDebugDocumentContext2.GetDocument(out IDebugDocument2 ppDocument)
         {
-            ppDocument = null;
+            ppDocument = null!; // nullable annotations don't work for COM methods
             return Constants.E_FAIL;
         }
 
@@ -139,7 +138,7 @@ namespace Microsoft.MIDebugEngine
         // this document context. 
         int IDebugDocumentContext2.Seek(int nCount, out IDebugDocumentContext2 ppDocContext)
         {
-            ppDocContext = null;
+            ppDocContext = null!; // nullable annotations don't work for COM methods
 
             return Constants.E_NOTIMPL;
         }

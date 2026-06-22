@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using MICore;
@@ -47,7 +47,7 @@ namespace Microsoft.MIDebugEngine.Natvis
         public virtual bool IsReadOnly() => Parent.IsReadOnly();
         public bool IsNullPointer() => Parent.IsNullPointer();
 
-        public VariableInformation FindChildByName(string name) => Parent.FindChildByName(name);
+        public VariableInformation FindChildByName(string name) => Parent.FindChildByName(name)!;
         public string EvalDependentExpression(string expr) => Parent.EvalDependentExpression(expr);
         public void AsyncEval(IDebugEventCallback2 pExprCallback) => Parent.AsyncEval(pExprCallback);
         public void SyncEval(enum_EVALFLAGS dwFlags, DAPEvalFlags dwDAPFlags) => Parent.SyncEval(dwFlags, dwDAPFlags);
@@ -148,18 +148,41 @@ namespace Microsoft.MIDebugEngine.Natvis
 
     internal struct VisualizerId
     {
-        public string Name { get; }
+        public string? Name { get; }
         public int Id { get; }
 
-        public VisualizerId(string name,int id)
+        public VisualizerId(string? name, int id)
         {
-            this.Name = name;
-            this.Id = id;
+            Name = name;
+            Id = id;
         }
     };
 
     public class Natvis : IDisposable
     {
+        private sealed class NullLogChannel : ILogChannel
+        {
+            public void SetLogLevel(LogLevel level)
+            {
+            }
+
+            public void WriteLine(LogLevel level, string message)
+            {
+            }
+
+            public void WriteLine(LogLevel level, string format, params object[] values)
+            {
+            }
+
+            public void Flush()
+            {
+            }
+
+            public void Close()
+            {
+            }
+        }
+
         private class AliasInfo
         {
             public TypeName ParsedName { get; private set; }
@@ -186,7 +209,7 @@ namespace Microsoft.MIDebugEngine.Natvis
         {
             public List<TypeInfo> Visualizers { get; private set; }
             public List<AliasInfo> Aliases { get; private set; }
-            public List<UIVisualizerType> UIVisualizers { get; set; } = null;
+            public List<UIVisualizerType>? UIVisualizers { get; set; }
             public readonly AutoVisualizer Environment;
 
             public FileInfo(AutoVisualizer env)
@@ -233,7 +256,7 @@ namespace Microsoft.MIDebugEngine.Natvis
                 {
                     foreach (var item in viz.Items)
                     {
-                        if (item is IntrinsicType intrinsic && !string.IsNullOrEmpty(intrinsic.Name))
+                        if (item is IntrinsicType intrinsic && !IsNullOrEmpty(intrinsic.Name))
                         {
                             Intrinsics[intrinsic.Name] = intrinsic;
                         }
@@ -249,6 +272,7 @@ namespace Microsoft.MIDebugEngine.Natvis
         private static readonly Regex s_intrinsicCallPattern = new Regex(@"\b(\w+)\s*\(");
         // Matches the leading "0x<hex> " address that GDB/LLDB prepends when displaying a string pointer value.
         private static readonly Regex s_addressPrefix = new Regex(@"^0x[0-9a-fA-F]+\s+");
+        private static readonly ILogChannel s_nullLogChannel = new NullLogChannel();
         private List<FileInfo> _typeVisualizers;
         private DebuggedProcess _process;
         private HostConfigurationStore _configStore;
@@ -262,7 +286,7 @@ namespace Microsoft.MIDebugEngine.Natvis
         private const int MAX_FORMAT_DEPTH = 10;
         private const int MAX_ALIAS_CHAIN = 10;
 
-        private IDisposable _natvisSettingWatcher;
+        private IDisposable? _natvisSettingWatcher;
 
         public enum DisplayStringsState
         {
@@ -284,11 +308,23 @@ namespace Microsoft.MIDebugEngine.Natvis
             _configStore = configStore;
         }
 
+        private ILogChannel NatvisLogger => _process.Logger.NatvisLogger ?? s_nullLogChannel;
+
+        private TypeName? ParseTypeName(string? fullyQualifiedName)
+        {
+            if (IsNullOrWhiteSpace(fullyQualifiedName))
+            {
+                return null;
+            }
+
+            return TypeName.Parse(fullyQualifiedName, NatvisLogger);
+        }
+
         private void InitializeNatvisServices()
         {
             try
             {
-                _natvisSettingWatcher = HostNatvisProject.WatchNatvisOptionSetting(_configStore, _process.Logger.NatvisLogger);
+                _natvisSettingWatcher = HostNatvisProject.WatchNatvisOptionSetting(_configStore, NatvisLogger);
                 HostNatvisProject.FindNatvis((s) => LoadFile(s));
             }
             catch (FileNotFoundException)
@@ -307,23 +343,23 @@ namespace Microsoft.MIDebugEngine.Natvis
             {
                 foreach (var fileName in fileNames)
                 {
-                    if (!string.IsNullOrEmpty(fileName))
+                    if (!IsNullOrEmpty(fileName))
                     {
                         if (!Path.IsPathRooted(fileName))
                         {
-                            string globalVisualizersDirectory = _process.Engine.GetMetric("GlobalVisualizersDirectory") as string;
-                            string globalNatVisPath = null;
-                            if (!string.IsNullOrEmpty(globalVisualizersDirectory) && !string.IsNullOrEmpty(fileName))
+                            string? globalVisualizersDirectory = _process.Engine.GetMetric("GlobalVisualizersDirectory") as string;
+                            string? globalNatVisPath = null;
+                            if (!IsNullOrEmpty(globalVisualizersDirectory) && !IsNullOrEmpty(fileName))
                             {
                                 globalNatVisPath = Path.Combine(globalVisualizersDirectory, fileName);
                             }
 
                             // For local launch, try and load natvis next to the target exe if it exists and if 
                             // the exe is rooted. If the file doesn't exist, and also doesn't exist in the global folder fail.
-                            if (_process.LaunchOptions is LocalLaunchOptions)
+                            if (_process.LaunchOptions is LocalLaunchOptions localLaunchOptions)
                             {
-                                string exePath = (_process.LaunchOptions as LocalLaunchOptions).ExePath;
-                                if (Path.IsPathRooted(exePath))
+                                string? exePath = localLaunchOptions.ExePath;
+                                if (!IsNullOrEmpty(exePath) && Path.IsPathRooted(exePath))
                                 {
                                     string localNatvisPath = Path.Combine(Path.GetDirectoryName(exePath), fileName);
 
@@ -343,7 +379,7 @@ namespace Microsoft.MIDebugEngine.Natvis
 
                             // Local wasn't supported or the file didn't exist. Try and load from globally registered visualizer directory if local didn't work 
                             // or wasn't supported by the launch options
-                            if (!string.IsNullOrEmpty(globalNatVisPath))
+                            if (!IsNullOrEmpty(globalNatVisPath))
                             {
                                 LoadFile(globalNatVisPath);
                             }
@@ -383,22 +419,19 @@ namespace Microsoft.MIDebugEngine.Natvis
                 using (var stream = new System.IO.FileStream(path, FileMode.Open, FileAccess.Read))
                 using (var reader = XmlReader.Create(stream, settings))
                 {
-                    AutoVisualizer autoVis = null;
-                    autoVis = serializer.Deserialize(reader) as AutoVisualizer;
-                    if (autoVis != null)
+                    if (serializer.Deserialize(reader) is AutoVisualizer autoVis)
                     {
                         FileInfo f = new FileInfo(autoVis);
-                        if (autoVis.Items == null)
+                        if (autoVis.Items is null)
                         {
                             return false;
                         }
                         foreach (var o in autoVis.Items)
                         {
-                            if (o is VisualizerType)
+                            if (o is VisualizerType v)
                             {
-                                VisualizerType v = (VisualizerType)o;
-                                TypeName t = TypeName.Parse(v.Name, _process.Logger.NatvisLogger);
-                                if (t != null)
+                                TypeName? t = ParseTypeName(v.Name);
+                                if (t is not null)
                                 {
                                     lock (_typeVisualizers)
                                     {
@@ -410,8 +443,8 @@ namespace Microsoft.MIDebugEngine.Natvis
                                 {
                                     foreach (var a in v.AlternativeType)
                                     {
-                                        t = TypeName.Parse(a.Name, _process.Logger.NatvisLogger);
-                                        if (t != null)
+                                        t = ParseTypeName(a.Name);
+                                        if (t is not null)
                                         {
                                             lock (_typeVisualizers)
                                             {
@@ -421,11 +454,10 @@ namespace Microsoft.MIDebugEngine.Natvis
                                     }
                                 }
                             }
-                            else if (o is AliasType)
+                            else if (o is AliasType a)
                             {
-                                AliasType a = (AliasType)o;
-                                TypeName t = TypeName.Parse(a.Name, _process.Logger.NatvisLogger);
-                                if (t != null)
+                                TypeName? t = ParseTypeName(a.Name);
+                                if (t is not null)
                                 {
                                     lock (_typeVisualizers)
                                     {
@@ -441,8 +473,9 @@ namespace Microsoft.MIDebugEngine.Natvis
                         }
 
                         _typeVisualizers.Add(f);
+                        return true;
                     }
-                    return autoVis != null;
+                    return false;
                 }
             }
             catch (Exception exception)
@@ -453,9 +486,9 @@ namespace Microsoft.MIDebugEngine.Natvis
             }
         }
 
-        internal (string value, VisualizerId[] uiVisualizers) FormatDisplayString(IVariableInformation variable)
+        internal (string value, VisualizerId[]? uiVisualizers) FormatDisplayString(IVariableInformation variable)
         {
-            VisualizerInfo visualizer = null;
+            VisualizerInfo? visualizer = null;
             try
             {
                 _depth++;
@@ -475,9 +508,8 @@ namespace Microsoft.MIDebugEngine.Natvis
                         Cache.Add(variable);    // vizualized value has been displayed
                         foreach (var item in visualizer.Visualizer.Items)
                         {
-                            if (item is DisplayStringType)
+                            if (item is DisplayStringType display)
                             {
-                                DisplayStringType display = item as DisplayStringType;
                                 // e.g. <DisplayString>{{ size={_Mypair._Myval2._Mylast - _Mypair._Myval2._Myfirst} }}</DisplayString>
                                 if (!EvalCondition(display.Condition, variable, visualizer.ScopedNames, visualizer.Intrinsics))
                                 {
@@ -502,14 +534,14 @@ namespace Microsoft.MIDebugEngine.Natvis
             return (variable.Value, visualizer?.GetUIVisualizers());
         }
 
-        private IVariableInformation GetVisualizationWrapper(IVariableInformation variable)
+        private IVariableInformation? GetVisualizationWrapper(IVariableInformation variable)
         {
             if (variable.IsPreformatted)
             {
                 return null;
             }
-            VisualizerInfo visualizer = FindType(variable);
-            if (visualizer == null || variable is VisualizerWrapper)    // don't stack wrappers
+            VisualizerInfo? visualizer = FindType(variable);
+            if (visualizer is null || variable is VisualizerWrapper)    // don't stack wrappers
             {
                 return null;
             }
@@ -532,8 +564,8 @@ namespace Microsoft.MIDebugEngine.Natvis
                 {
                     return ExpandVisualized(variable);
                 }
-                IVariableInformation visView = GetVisualizationWrapper(variable);
-                if (visView == null)
+                IVariableInformation? visView = GetVisualizationWrapper(variable);
+                if (visView is null)
                 {
                     return variable.Children;
                 }
@@ -575,22 +607,22 @@ namespace Microsoft.MIDebugEngine.Natvis
             string result = string.Empty;
             this._typeVisualizers.ForEach((f)=>
             {
-                UIVisualizerType uiViz;
-                if ((uiViz = f.UIVisualizers?.FirstOrDefault((u) => u.ServiceId == serviceId && u.Id == id)) != null)
+                UIVisualizerType? uiViz = f.UIVisualizers?.FirstOrDefault((u) => u.ServiceId == serviceId && u.Id == id);
+                if (uiViz is not null)
                 {
-                    result = uiViz.MenuName;
+                    result = uiViz.MenuName ?? string.Empty;
                 }
             });
 
             return result;
         }
 
-        private delegate IVariableInformation Traverse(IVariableInformation node);
+        private delegate IVariableInformation? Traverse(IVariableInformation node);
 
         private IVariableInformation[] ExpandVisualized(IVariableInformation variable)
         {
-            VisualizerInfo visualizer = FindType(variable);
-            if (visualizer == null)
+            VisualizerInfo? visualizer = FindType(variable);
+            if (visualizer is null)
             {
                 return variable.Children;
             }
@@ -609,6 +641,10 @@ namespace Microsoft.MIDebugEngine.Natvis
                     {
                         continue;
                     }
+                    if (item.Value is null)
+                    {
+                        continue;
+                    }
                     IVariableInformation expr = GetExpression(item.Value, variable, visualizer.ScopedNames, item.Name, visualizer.Intrinsics);
                     children.Add(expr);
                 }
@@ -622,10 +658,14 @@ namespace Microsoft.MIDebugEngine.Natvis
 
                     uint totalSize = 0;
                     int rank = 0;
-                    uint[] dimensions = null;
+                    uint[]? dimensions = null;
 
-                    if (!string.IsNullOrEmpty(item.Rank))
+                    if (!IsNullOrEmpty(item.Rank))
                     {
+                        if (item.Size is null)
+                        {
+                            continue;
+                        }
                         totalSize = 1;
                         if (!int.TryParse(item.Rank, NumberStyles.None, CultureInfo.InvariantCulture, out rank))
                         {
@@ -649,6 +689,10 @@ namespace Microsoft.MIDebugEngine.Natvis
                     }
                     else
                     {
+                        if (item.Size is null)
+                        {
+                            continue;
+                        }
                         string val = GetExpressionValue(item.Size, variable, visualizer.ScopedNames, visualizer.Intrinsics);
                         totalSize = MICore.Debugger.ParseUint(val, throwOnError: true);
                     }
@@ -659,14 +703,19 @@ namespace Microsoft.MIDebugEngine.Natvis
                         startIndex = pvwVariable.StartIndex;
                     }
 
-                    ValuePointerType[] vptrs = item.ValuePointer;
+                    ValuePointerType[]? vptrs = item.ValuePointer;
+                    if (vptrs is null)
+                    {
+                        continue;
+                    }
+
                     foreach (var vp in vptrs)
                     {
                         if (EvalCondition(vp.Condition, variable, visualizer.ScopedNames, visualizer.Intrinsics))
                         {
                             IVariableInformation ptrExpr = GetExpression("*(" + vp.Value + ")", variable, visualizer.ScopedNames, intrinsics: visualizer.Intrinsics);
                             string typename = ptrExpr.TypeName;
-                            if (String.IsNullOrWhiteSpace(typename))
+                            if (IsNullOrWhiteSpace(typename))
                             {
                                 continue;
                             }
@@ -702,14 +751,31 @@ namespace Microsoft.MIDebugEngine.Natvis
                                 for (uint index = 0; index < requestedSize; ++index)
                                 {
                                     uint currentOffsetIndex = startIndex + index;
-                                    string displayName = rank > 1 ? GetDisplayNameFromArrayIndex(currentOffsetIndex, rank, dimensions, isForward) : currentOffsetIndex.ToString(CultureInfo.InvariantCulture);
+                                    string displayName;
+                                    if (rank > 1)
+                                    {
+                                        if (dimensions is null)
+                                        {
+                                            continue;
+                                        }
+
+                                        displayName = GetDisplayNameFromArrayIndex(currentOffsetIndex, rank, dimensions, isForward);
+                                    }
+                                    else
+                                    {
+                                        displayName = currentOffsetIndex.ToString(CultureInfo.InvariantCulture);
+                                    }
                                     children.Add(new SimpleWrapper("[" + displayName + "]", _process.Engine, arrayExpr.Children[index]));
                                 }
 
                                 if (totalSize > offset)
                                 {
-                                    IVariableInformation moreVariable = new PaginatedVisualizerWrapper(ResourceStrings.MoreView, _process.Engine, variable, FindType(variable), isVisualizerView: true, offset);
-                                    children.Add(moreVariable);
+                                    VisualizerInfo? currentVisualizer = FindType(variable);
+                                    if (currentVisualizer is not null)
+                                    {
+                                        IVariableInformation moreVariable = new PaginatedVisualizerWrapper(ResourceStrings.MoreView, _process.Engine, variable, currentVisualizer, isVisualizerView: true, offset);
+                                        children.Add(moreVariable);
+                                    }
                                 }
                             }
                             break;
@@ -723,12 +789,12 @@ namespace Microsoft.MIDebugEngine.Natvis
                     {
                         continue;
                     }
-                    if (String.IsNullOrWhiteSpace(item.Size) || String.IsNullOrWhiteSpace(item.HeadPointer) || String.IsNullOrWhiteSpace(item.LeftPointer) ||
-                        String.IsNullOrWhiteSpace(item.RightPointer))
+                    if (IsNullOrWhiteSpace(item.Size) || IsNullOrWhiteSpace(item.HeadPointer) || IsNullOrWhiteSpace(item.LeftPointer) ||
+                        IsNullOrWhiteSpace(item.RightPointer))
                     {
                         continue;
                     }
-                    if (item.ValueNode == null || String.IsNullOrWhiteSpace(item.ValueNode.Value))
+                    if (item.ValueNode == null || IsNullOrWhiteSpace(item.ValueNode.Value))
                     {
                         continue;
                     }
@@ -748,9 +814,9 @@ namespace Microsoft.MIDebugEngine.Natvis
                     if (head != 0 && size != 0)
                     {
                         headVal.EnsureChildren();
-                        Traverse goLeft = GetTraverse(item.LeftPointer, headVal);
-                        Traverse goRight = GetTraverse(item.RightPointer, headVal);
-                        Traverse getValue = null;
+                        Traverse? goLeft = GetTraverse(item.LeftPointer, headVal);
+                        Traverse? goRight = GetTraverse(item.RightPointer, headVal);
+                        Traverse? getValue = null;
                         if (item.ValueNode.Value == "this") // TODO: handle condition
                         {
                             getValue = (v) => v;
@@ -791,21 +857,21 @@ namespace Microsoft.MIDebugEngine.Natvis
                     //      <ValueNode>m_element</ValueNode>
                     //    </LinkedListItems>
                     LinkedListItemsType item = (LinkedListItemsType)i;
-                    if (!String.IsNullOrWhiteSpace(item.Condition))
+                    if (!IsNullOrWhiteSpace(item.Condition))
                     {
                         if (!EvalCondition(item.Condition, variable, visualizer.ScopedNames, visualizer.Intrinsics))
                             continue;
                     }
-                    if (String.IsNullOrWhiteSpace(item.HeadPointer) || String.IsNullOrWhiteSpace(item.NextPointer))
+                    if (IsNullOrWhiteSpace(item.HeadPointer) || IsNullOrWhiteSpace(item.NextPointer))
                     {
                         continue;
                     }
-                    if (String.IsNullOrWhiteSpace(item.ValueNode))
+                    if (IsNullOrWhiteSpace(item.ValueNode))
                     {
                         continue;
                     }
                     uint size = MAX_EXPAND;
-                    if (!String.IsNullOrWhiteSpace(item.Size))
+                    if (!IsNullOrWhiteSpace(item.Size))
                     {
                         string val = GetExpressionValue(item.Size, variable, visualizer.ScopedNames, visualizer.Intrinsics);
                         size = MICore.Debugger.ParseUint(val);
@@ -824,8 +890,8 @@ namespace Microsoft.MIDebugEngine.Natvis
                     if (head != 0 && size != 0)
                     {
                         headVal.EnsureChildren();
-                        Traverse goNext = GetTraverse(item.NextPointer, headVal);
-                        Traverse getValue = null;
+                        Traverse? goNext = GetTraverse(item.NextPointer, headVal);
+                        Traverse? getValue = null;
                         if (item.ValueNode == "this")
                         {
                             getValue = (v) => v;
@@ -880,7 +946,7 @@ namespace Microsoft.MIDebugEngine.Natvis
                     }
                     foreach (var s in sizes)
                     {
-                        if (string.IsNullOrWhiteSpace(s.Value))
+                        if (IsNullOrWhiteSpace(s.Value))
                             continue;
                         if (EvalCondition(s.Condition, variable, visualizer.ScopedNames, visualizer.Intrinsics))
                         {
@@ -896,7 +962,7 @@ namespace Microsoft.MIDebugEngine.Natvis
                     }
                     foreach (var v in values)
                     {
-                        if (string.IsNullOrWhiteSpace(v.Value))
+                        if (IsNullOrWhiteSpace(v.Value))
                             continue;
                         if (EvalCondition(v.Condition, variable, visualizer.ScopedNames, visualizer.Intrinsics))
                         {
@@ -945,7 +1011,7 @@ namespace Microsoft.MIDebugEngine.Natvis
                             continue;
                         }
                     }
-                    if (String.IsNullOrWhiteSpace(item.Value))
+                    if (IsNullOrWhiteSpace(item.Value))
                     {
                         continue;
                     }
@@ -966,11 +1032,11 @@ namespace Microsoft.MIDebugEngine.Natvis
             return children.ToArray();
         }
 
-        private Traverse GetTraverse(string direction, IVariableInformation node)
+        private Traverse? GetTraverse(string direction, IVariableInformation node)
         {
             Traverse go;
             var val = node.FindChildByName(direction);
-            if (val == null)
+            if (val is null)
             {
                 return null;
             }
@@ -986,6 +1052,10 @@ namespace Microsoft.MIDebugEngine.Natvis
                     if (addr != 0)
                     {
                         var next = v.FindChildByName(direction);
+                        if (next is null)
+                        {
+                            return null;
+                        }
                         next = new VariableInformation("(" + v.TypeName + ")" + next.Value, next, _process.Engine, "");
                         next.SyncEval();
                         return next;
@@ -1042,8 +1112,8 @@ namespace Microsoft.MIDebugEngine.Natvis
                         break;
                     case Node.ScanState.value:
                         nodes.Peek().State = Node.ScanState.right;
-                        IVariableInformation value = getValue(nodes.Peek().Content);
-                        if (value != null)
+                        IVariableInformation? value = getValue(nodes.Peek().Content);
+                        if (value is not null)
                         {
                             content.Add(new SimpleWrapper("[" + i.ToString(CultureInfo.InvariantCulture) + "]", _process.Engine, value));
                             i++;
@@ -1065,15 +1135,19 @@ namespace Microsoft.MIDebugEngine.Natvis
             }
             if (size > i)
             {
-                IVariableInformation tcw = new TreeContinueWrapper(ResourceStrings.MoreView, _process.Engine, parent, FindType(parent), isVisualizerView: true, nodes.Peek(), nodes, i);
-                content.Add(tcw);
+                VisualizerInfo? parentVisualizer = FindType(parent);
+                if (parentVisualizer is not null)
+                {
+                    IVariableInformation tcw = new TreeContinueWrapper(ResourceStrings.MoreView, _process.Engine, parent, parentVisualizer, isVisualizerView: true, nodes.Peek(), nodes, i);
+                    content.Add(tcw);
+                }
             }
         }
 
         private void TraverseList(IVariableInformation root, Traverse goNext, Traverse getValue, List<IVariableInformation> content, uint size, bool noValueInRoot, IVariableInformation parent, uint startIndex)
         {
             uint i = startIndex;
-            IVariableInformation node = root;
+            IVariableInformation? node = root;
             ulong rootAddr = MICore.Debugger.ParseAddr(node.Value);
             ulong nextAddr = rootAddr;
 
@@ -1082,8 +1156,8 @@ namespace Microsoft.MIDebugEngine.Natvis
             {
                 if (!noValueInRoot || nextAddr != rootAddr)
                 {
-                    IVariableInformation value = getValue(node);
-                    if (value != null)
+                    IVariableInformation? value = getValue(node);
+                    if (value is not null)
                     {
                         content.Add(new SimpleWrapper("[" + i.ToString(CultureInfo.InvariantCulture) + "]", _process.Engine, value));
                         i++;
@@ -1092,18 +1166,27 @@ namespace Microsoft.MIDebugEngine.Natvis
                 if (i < maxIndex)
                 {
                     node = goNext(node);
-                }
-                nextAddr = MICore.Debugger.ParseAddr(node.Value);
-                if (nextAddr == rootAddr)
-                {
-                    // circular link, exit the loop
-                    break;
+                    if (node is null)
+                    {
+                        break;
+                    }
+                    nextAddr = MICore.Debugger.ParseAddr(node.Value);
+                    if (nextAddr == rootAddr)
+                    {
+                        // circular link, exit the loop
+                        break;
+                    }
                 }
             }
-            if (size > i)
+            if (size > i && node is not null)
             {
-                IVariableInformation llcw = new LinkedListContinueWrapper(ResourceStrings.MoreView, _process.Engine, parent, FindType(parent), isVisualizerView: true, goNext(node), i);
-                content.Add(llcw);
+                IVariableInformation? continueNode = goNext(node);
+                VisualizerInfo? parentVisualizer = FindType(parent);
+                if (continueNode is not null && parentVisualizer is not null)
+                {
+                    IVariableInformation llcw = new LinkedListContinueWrapper(ResourceStrings.MoreView, _process.Engine, parent, parentVisualizer, isVisualizerView: true, continueNode, i);
+                    content.Add(llcw);
+                }
             }
         }
 
@@ -1117,22 +1200,22 @@ namespace Microsoft.MIDebugEngine.Natvis
             return type;
         }
 
-        private bool EvalCondition(string condition, IVariableInformation variable, IDictionary<string, string> scopedNames, IDictionary<string, IntrinsicType> intrinsics = null)
+        private bool EvalCondition(string? condition, IVariableInformation variable, IDictionary<string, string> scopedNames, IDictionary<string, IntrinsicType>? intrinsics = null)
         {
             bool res = true;
-            if (!String.IsNullOrWhiteSpace(condition))
+            if (!IsNullOrWhiteSpace(condition))
             {
                 string exprValue = GetExpressionValue(condition, variable, scopedNames, intrinsics);
 
                 bool exprBool = false;
                 int exprInt = 0;
-                res = !String.IsNullOrEmpty(exprValue) &&
+                res = !IsNullOrEmpty(exprValue) &&
                     ((bool.TryParse(exprValue, out exprBool) && exprBool) || (int.TryParse(exprValue, out exprInt) && exprInt > 0));
             }
             return res;
         }
 
-        private IVariableInformation FindBaseClass(IVariableInformation variable)
+        private IVariableInformation? FindBaseClass(IVariableInformation variable)
         {
             variable.EnsureChildren();
             if (variable.Children != null)
@@ -1142,7 +1225,7 @@ namespace Microsoft.MIDebugEngine.Natvis
             return null;
         }
 
-        private VisualizerInfo Scan(TypeName name, IVariableInformation variable)
+        private VisualizerInfo? Scan(TypeName name, IVariableInformation variable)
         {
             int aliasChain = 0;
         tryAgain:
@@ -1173,13 +1256,19 @@ namespace Microsoft.MIDebugEngine.Natvis
                         }
                     }
 
+                    if (alias.Alias.Value is null)
+                    {
+                        continue;
+                    }
+
                     string newName = ReplaceNamesInExpression(alias.Alias.Value, null, scopedNames);
-                    name = TypeName.Parse(newName, _process.Logger.NatvisLogger);
+                    TypeName? parsedAliasName = ParseTypeName(newName);
                     aliasChain++;
-                    if (aliasChain > MAX_ALIAS_CHAIN)
+                    if (parsedAliasName is null || aliasChain > MAX_ALIAS_CHAIN)
                     {
                         break;
                     }
+                    name = parsedAliasName;
                     goto tryAgain;
                 }
             }
@@ -1194,9 +1283,9 @@ namespace Microsoft.MIDebugEngine.Natvis
         /// <param name="name">The type name to match against the candidate patterns.</param>
         /// <param name="getParsedName">A function that returns the parsed <see cref="TypeName"/> for a given candidate.</param>
         /// <returns>The best matching candidate, or <c>null</c> if no candidate matches.</returns>
-        internal static T FindBestMatch<T>(List<T> candidates, TypeName name, Func<T, TypeName> getParsedName) where T : class
+        internal static T? FindBestMatch<T>(List<T> candidates, TypeName name, Func<T, TypeName> getParsedName) where T : class
         {
-            T best = null;
+            T? best = null;
             int bestArgCount = 0;
             int bestConcreteCount = 0;
             foreach (var candidate in candidates)
@@ -1226,19 +1315,19 @@ namespace Microsoft.MIDebugEngine.Natvis
             return best;
         }
 
-        private VisualizerInfo FindType(IVariableInformation variable)
+        private VisualizerInfo? FindType(IVariableInformation variable)
         {
-            if (variable is VisualizerWrapper)
+            if (variable is VisualizerWrapper visualizerWrapper)
             {
-                return ((VisualizerWrapper)variable).Visualizer;
+                return visualizerWrapper.Visualizer;
             }
-            if (_vizCache.ContainsKey(variable.TypeName))
+            if (_vizCache.TryGetValue(variable.TypeName, out VisualizerInfo cachedVisualizer))
             {
-                return _vizCache[variable.TypeName];
+                return cachedVisualizer;
             }
-            TypeName parsedName = TypeName.Parse(variable.TypeName, _process.Logger.NatvisLogger);
-            IVariableInformation var = variable;
-            while (parsedName != null)
+            TypeName? parsedName = ParseTypeName(variable.TypeName);
+            IVariableInformation? var = variable;
+            while (parsedName is not null && var is not null)
             {
                 var visualizer = Scan(parsedName, variable);
                 if (visualizer == null && (parsedName.BaseName.EndsWith("*", StringComparison.Ordinal) || parsedName.BaseName.EndsWith("&", StringComparison.Ordinal)))
@@ -1255,14 +1344,14 @@ namespace Microsoft.MIDebugEngine.Natvis
                 {
                     break;
                 }
-                parsedName = TypeName.Parse(var.TypeName, _process.Logger.NatvisLogger);
+                parsedName = ParseTypeName(var.TypeName);
             }
             return null;
         }
 
-        private string FormatValue(string format, IVariableInformation variable, IDictionary<string, string> scopedNames, IDictionary<string, IntrinsicType> intrinsics = null)
+        private string FormatValue(string? format, IVariableInformation variable, IDictionary<string, string> scopedNames, IDictionary<string, IntrinsicType>? intrinsics = null)
         {
-            if (String.IsNullOrWhiteSpace(format))
+            if (IsNullOrWhiteSpace(format))
             {
                 return String.Empty;
             }
@@ -1283,7 +1372,7 @@ namespace Microsoft.MIDebugEngine.Natvis
                     if (m.Success)
                     {
                         string rawExpr = format.Substring(i + 1, m.Length - 2);
-                        string spec = ExtractFormatSpecifier(rawExpr);
+                        string? spec = ExtractFormatSpecifier(rawExpr);
                         string exprValue = GetExpressionValue(rawExpr, variable, scopedNames, intrinsics);
                         if (spec == "sub" || spec == "su")
                             exprValue = CleanUtf16StringValue(exprValue);
@@ -1312,7 +1401,7 @@ namespace Microsoft.MIDebugEngine.Natvis
             return value.ToString();
         }
 
-        private delegate string Substitute(Match name);
+        private delegate string? Substitute(Match name);
 
         private string ProcessNamesInString(string expression, Substitute[] processors)
         {
@@ -1338,8 +1427,8 @@ namespace Microsoft.MIDebugEngine.Natvis
                 {
                     foreach (var p in processors)
                     {
-                        string repl = p(m);
-                        if (repl != null)
+                        string? repl = p(m);
+                        if (repl is not null)
                         {
                             result.Append(repl);
                             found = true;
@@ -1384,7 +1473,7 @@ namespace Microsoft.MIDebugEngine.Natvis
         internal static bool IsPrecededByMemberAccessOperator(string expression, int index)
         {
             // Validate index bounds
-            if (string.IsNullOrEmpty(expression) || index < 0 || index > expression.Length)
+            if (IsNullOrEmpty(expression) || index < 0 || index > expression.Length)
             {
                 return false;
             }
@@ -1494,7 +1583,7 @@ namespace Microsoft.MIDebugEngine.Natvis
         /// <see cref="VariableInformation.ProcessFormatSpecifiers"/>: modifiers "nvo", "na",
         /// "nr", "nd" are stripped before returning.  Returns null when no specifier is present.
         /// </summary>
-        internal static string ExtractFormatSpecifier(string expression)
+        internal static string? ExtractFormatSpecifier(string expression)
         {
             int commaPos = FindLastTopLevelComma(expression);
             if (commaPos < 0) return null;
@@ -1512,7 +1601,7 @@ namespace Microsoft.MIDebugEngine.Natvis
         /// </summary>
         internal static string CleanUtf16StringValue(string value)
         {
-            if (string.IsNullOrEmpty(value)) return value;
+            if (IsNullOrEmpty(value)) return value;
             // Strip leading "0x<hex> " address prefix emitted by GDB/LLDB.
             value = s_addressPrefix.Replace(value, "");
             // Strip surrounding u"..." or U"..." quotes.
@@ -1537,7 +1626,7 @@ namespace Microsoft.MIDebugEngine.Natvis
         /// </summary>
         internal static string CleanAsciiStringValue(string value)
         {
-            if (string.IsNullOrEmpty(value)) return value;
+            if (IsNullOrEmpty(value)) return value;
             // Strip leading "0x<hex> " address prefix emitted by GDB/LLDB.
             value = s_addressPrefix.Replace(value, "");
             // Strip surrounding "..." quotes.
@@ -1563,8 +1652,8 @@ namespace Microsoft.MIDebugEngine.Natvis
             string result = body;
             for (int i = 0; i < parameters.Length && i < args.Count; i++)
             {
-                string paramName = parameters[i].Name;
-                if (string.IsNullOrEmpty(paramName)) continue;
+                string? paramName = parameters[i].Name;
+                if (IsNullOrEmpty(paramName)) continue;
                 // whole-word replacement
                 result = Regex.Replace(result, @"\b" + Regex.Escape(paramName) + @"\b", args[i]);
             }
@@ -1577,9 +1666,9 @@ namespace Microsoft.MIDebugEngine.Natvis
         /// becomes  (jd - 2440588) + 1.
         /// Recurses up to <paramref name="maxDepth"/> times to handle chained calls.
         /// </summary>
-        internal static string ResolveIntrinsicCalls(string expression, IDictionary<string, IntrinsicType> intrinsics, int maxDepth = 20)
+        internal static string ResolveIntrinsicCalls(string expression, IDictionary<string, IntrinsicType>? intrinsics, int maxDepth = 20)
         {
-            if (string.IsNullOrEmpty(expression) || intrinsics == null || intrinsics.Count == 0 || maxDepth <= 0)
+            if (IsNullOrEmpty(expression) || intrinsics == null || intrinsics.Count == 0 || maxDepth <= 0)
                 return expression;
 
             bool anyReplaced = false;
@@ -1635,7 +1724,7 @@ namespace Microsoft.MIDebugEngine.Natvis
 
                 // Extract and split arguments
                 string argsText = result.Substring(openParen + 1, closeParen - openParen - 1);
-                List<string> args = string.IsNullOrWhiteSpace(argsText)
+                List<string> args = IsNullOrWhiteSpace(argsText)
                     ? new List<string>()
                     : SplitArguments(argsText);
 
@@ -1663,7 +1752,7 @@ namespace Microsoft.MIDebugEngine.Natvis
             return result;
         }
 
-        private string ReplaceNamesInExpression(string expression, IVariableInformation variable, IDictionary<string, string> scopedNames, IDictionary<string, IntrinsicType> intrinsics = null)
+        private string ReplaceNamesInExpression(string expression, IVariableInformation? variable, IDictionary<string, string> scopedNames, IDictionary<string, IntrinsicType>? intrinsics = null)
         {
             // Strip Windows dll!-qualified type prefixes (e.g. Qt6Cored.dll!)
             // for GDB/LLDB compatibility — meaningless outside Windows
@@ -1675,7 +1764,7 @@ namespace Microsoft.MIDebugEngine.Natvis
             return ProcessNamesInString(expression, new Substitute[] {
                 (m)=>
                     {
-                        if (variable == null)
+                        if (variable is null)
                             return null;
 
                         // replace explicit this references
@@ -1683,15 +1772,15 @@ namespace Microsoft.MIDebugEngine.Natvis
                             return (variable.TypeName.EndsWith("*", StringComparison.Ordinal) ? "(" : "(&") + variable.FullName() + ")";
 
                         // finds children of this structure and sub's in the fullname of the child
-                        IVariableInformation child = variable.FindChildByName(m.Value);
-                        if (child != null)
+                        IVariableInformation? child = variable.FindChildByName(m.Value);
+                        if (child is not null)
                             return "(" + child.FullName() + ")";
 
                         return null;
                     },
                 (m)=>
                     {   // replaces the '$Tx' with actual template parameter 
-                        string res;
+                        string? res;
                         if (scopedNames != null && scopedNames.TryGetValue(m.Value, out res))
                         {
                             return res;
@@ -1707,18 +1796,18 @@ namespace Microsoft.MIDebugEngine.Natvis
         /// <param name="expression"></param>
         /// <param name="variable"></param>
         /// <returns></returns>
-        private IVariableInformation GetExpression(string expression, IVariableInformation variable, IDictionary<string, string> scopedNames, string displayName = null, IDictionary<string, IntrinsicType> intrinsics = null)
+        private IVariableInformation GetExpression(string expression, IVariableInformation variable, IDictionary<string, string> scopedNames, string? displayName = null, IDictionary<string, IntrinsicType>? intrinsics = null)
         {
             string processedExpr = ReplaceNamesInExpression(expression, variable, scopedNames, intrinsics);
-            IVariableInformation expressionVariable = new VariableInformation(processedExpr, variable, _process.Engine, displayName);
+            IVariableInformation expressionVariable = new VariableInformation(processedExpr, variable, _process.Engine, displayName ?? string.Empty);
             expressionVariable.SyncEval();
             return expressionVariable;
         }
 
-        private string GetExpressionValue(string expression, IVariableInformation variable, IDictionary<string, string> scopedNames, IDictionary<string, IntrinsicType> intrinsics = null)
+        private string GetExpressionValue(string expression, IVariableInformation variable, IDictionary<string, string> scopedNames, IDictionary<string, IntrinsicType>? intrinsics = null)
         {
             string processedExpr = ReplaceNamesInExpression(expression, variable, scopedNames, intrinsics);
-            IVariableInformation expressionVariable = new VariableInformation(processedExpr, variable, _process.Engine, null);
+            IVariableInformation expressionVariable = new VariableInformation(processedExpr, variable, _process.Engine, string.Empty);
             expressionVariable.SyncEval();
 
             // Avoid recursive natvis formatting when expression is 'this'

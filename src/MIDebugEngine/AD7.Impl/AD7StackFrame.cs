@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using Microsoft.VisualStudio.Debugger.Interop;
-using System.Diagnostics;
 using MICore;
 using System.Threading.Tasks;
 using System.Globalization;
@@ -21,10 +20,10 @@ namespace Microsoft.MIDebugEngine
         public ThreadContext ThreadContext { get; private set; }
 
         private string _functionName;
-        private MITextPosition _textPosition;
+        private MITextPosition? _textPosition;
         private uint _radix;
-        private AD7MemoryAddress _codeCxt;
-        private AD7DocumentContext _documentCxt;
+        private AD7MemoryAddress? _codeCxt;
+        private AD7DocumentContext? _documentCxt;
 
         public AD7StackFrame(AD7Engine engine, AD7Thread thread, ThreadContext threadContext)
         {
@@ -42,10 +41,10 @@ namespace Microsoft.MIDebugEngine
                 _codeCxt = new AD7MemoryAddress(this.Engine, threadContext.pc.Value, _functionName);
             }
 
-            if (_textPosition != null)
+            if (_textPosition is not null && _codeCxt is not null)
             {
                 _documentCxt = new AD7DocumentContext(_textPosition, _codeCxt);
-                _codeCxt?.SetDocumentContext(_documentCxt);
+                _codeCxt.SetDocumentContext(_documentCxt);
             }
         }
 
@@ -53,7 +52,7 @@ namespace Microsoft.MIDebugEngine
 
         public void SetFrameInfo(enum_FRAMEINFO_FLAGS dwFieldSpec, out FRAMEINFO frameInfo)
         {
-            List<SimpleVariableInformation> parameters = null;
+            List<SimpleVariableInformation>? parameters = null;
             if ((dwFieldSpec & enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_ARGS) != 0 && !this.Engine.DebuggedProcess.MICommandFactory.SupportsFrameFormatting)
             {
                 Engine.DebuggedProcess.WorkerThread.RunOperation(async () =>
@@ -65,11 +64,11 @@ namespace Microsoft.MIDebugEngine
         }
 
         // Construct a FRAMEINFO for this stack frame with the requested information.
-        public void SetFrameInfo(enum_FRAMEINFO_FLAGS dwFieldSpec, out FRAMEINFO frameInfo, List<SimpleVariableInformation> parameters)
+        public void SetFrameInfo(enum_FRAMEINFO_FLAGS dwFieldSpec, out FRAMEINFO frameInfo, List<SimpleVariableInformation>? parameters)
         {
             frameInfo = new FRAMEINFO();
 
-            DebuggedModule module = ThreadContext.FindModule(Engine.DebuggedProcess);
+            DebuggedModule? module = ThreadContext.FindModule(Engine.DebuggedProcess);
 
             // The debugger is asking for the formatted name of the function which is displayed in the callstack window.
             // There are several optional parts to this name including the module, argument types and values, and line numbers.
@@ -77,7 +76,7 @@ namespace Microsoft.MIDebugEngine
             if ((dwFieldSpec & enum_FRAMEINFO_FLAGS.FIF_FUNCNAME) != 0)
             {
                 // If there is source information, construct a string that contains the module name, function name, and optionally argument names and values.
-                if (_textPosition != null)
+                if (_textPosition is not null)
                 {
                     frameInfo.m_bstrFuncName = "";
 
@@ -146,11 +145,11 @@ namespace Microsoft.MIDebugEngine
                     }
                     else if ((dwFieldSpec & enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_MODULE) != 0 && module != null)
                     {
-                        frameInfo.m_bstrFuncName = module.Name + '!' + EngineUtils.GetAddressDescription(Engine.DebuggedProcess, ThreadContext.pc.Value);
+                        frameInfo.m_bstrFuncName = module.Name + '!' + GetAddressDescription();
                     }
                     else
                     {
-                        frameInfo.m_bstrFuncName = EngineUtils.GetAddressDescription(Engine.DebuggedProcess, ThreadContext.pc.Value);
+                        frameInfo.m_bstrFuncName = GetAddressDescription();
                     }
                 }
                 frameInfo.m_dwValidFields |= enum_FRAMEINFO_FLAGS.FIF_FUNCNAME;
@@ -205,10 +204,11 @@ namespace Microsoft.MIDebugEngine
             {
                 if (module != null)
                 {
-                    AD7Module ad7Module = (AD7Module)module.Client;
-                    Debug.Assert(ad7Module != null);
-                    frameInfo.m_pModule = ad7Module;
-                    frameInfo.m_dwValidFields |= enum_FRAMEINFO_FLAGS.FIF_DEBUG_MODULEP;
+                    if (module.Client is AD7Module ad7Module)
+                    {
+                        frameInfo.m_pModule = ad7Module;
+                        frameInfo.m_dwValidFields |= enum_FRAMEINFO_FLAGS.FIF_DEBUG_MODULEP;
+                    }
                 }
             }
 
@@ -223,9 +223,11 @@ namespace Microsoft.MIDebugEngine
 
             if ((dwFieldSpec & enum_FRAMEINFO_FLAGS.FIF_LANGUAGE) != 0)
             {
+                string language = string.Empty;
                 Guid unused = Guid.Empty;
-                if (GetLanguageInfo(ref frameInfo.m_bstrLanguage, ref unused) == 0)
+                if (GetLanguageInfo(ref language, ref unused) == 0)
                 {
+                    frameInfo.m_bstrLanguage = language;
                     frameInfo.m_dwValidFields |= enum_FRAMEINFO_FLAGS.FIF_LANGUAGE;
                 }
             }
@@ -244,14 +246,19 @@ namespace Microsoft.MIDebugEngine
                     await Engine.UpdateRadixAsync(radix);
                 });
             }
-            if (_textPosition != null)
+            if (_textPosition is not null)
             {
                 _radix = radix;
-                List<VariableInformation> localsAndParameters = null;
+                List<VariableInformation>? localsAndParameters = null;
                 Engine.DebuggedProcess.WorkerThread.RunOperation(async () =>
                 {
                     localsAndParameters = await Engine.DebuggedProcess.GetLocalsAndParameters(Thread, ThreadContext);
                 });
+
+                if (localsAndParameters is null)
+                {
+                    return;
+                }
 
                 foreach (VariableInformation vi in localsAndParameters)
                 {
@@ -349,7 +356,7 @@ namespace Microsoft.MIDebugEngine
 
             elementsReturned = (uint)registerGroups.Count;
             DEBUG_PROPERTY_INFO[] propInfo = new DEBUG_PROPERTY_INFO[elementsReturned];
-            Tuple<int, string>[] values = null;
+            Tuple<int, string>[] values = Array.Empty<Tuple<int, string>>();
             Engine.DebuggedProcess.WorkerThread.RunOperation(async () =>
             {
                 values = await Engine.DebuggedProcess.GetRegisters(Thread.GetDebuggedThread().Id, ThreadContext.Level);
@@ -366,7 +373,7 @@ namespace Microsoft.MIDebugEngine
 
         public string EvaluateExpression(string expr)
         {
-            string val = null;
+            string val = null!;
             Engine.DebuggedProcess.WorkerThread.RunOperation(async () =>
             {
                 val = await Engine.DebuggedProcess.MICommandFactory.DataEvaluateExpression(expr, Thread.Id, ThreadContext.Level);
@@ -386,7 +393,7 @@ namespace Microsoft.MIDebugEngine
             int hr;
 
             elementsReturned = 0;
-            enumObject = null;
+            enumObject = null!; // nullable annotations don't work for COM methods
 
             try
             {
@@ -432,12 +439,13 @@ namespace Microsoft.MIDebugEngine
         // Gets the code context for this stack frame. The code context represents the current instruction pointer in this stack frame.
         int IDebugStackFrame2.GetCodeContext(out IDebugCodeContext2 memoryAddress)
         {
-            memoryAddress = _codeCxt;
-            if (memoryAddress == null)
+            if (_codeCxt is null)
             {
+                memoryAddress = null!; // nullable annotations don't work for COM methods
                 return Constants.E_FAIL; // annotated frame
             }
 
+            memoryAddress = _codeCxt;
             return Constants.S_OK;
         }
 
@@ -446,7 +454,7 @@ namespace Microsoft.MIDebugEngine
         // pointer associated with the stack frame. The debugger calls EnumProperties to obtain these values in the sample.
         int IDebugStackFrame2.GetDebugProperty(out IDebugProperty2 property)
         {
-            property = null;
+            property = null!; // nullable annotations don't work for COM methods
             return Constants.E_NOTIMPL;
         }
 
@@ -454,9 +462,9 @@ namespace Microsoft.MIDebugEngine
         // and will use it to open the correct source document for this stack frame.
         int IDebugStackFrame2.GetDocumentContext(out IDebugDocumentContext2 docContext)
         {
-            if (_documentCxt == null)
+            if (_documentCxt is null)
             {
-                docContext = null;
+                docContext = null!; // nullable annotations don't work for COM methods
                 return Constants.E_FAIL; // annotated frame
             }
 
@@ -496,7 +504,7 @@ namespace Microsoft.MIDebugEngine
         // Gets the language associated with this stack frame. 
         public int GetLanguageInfo(ref string pbstrLanguage, ref Guid pguidLanguage)
         {
-            if (_documentCxt != null)
+            if (_documentCxt is not null)
             {
                 return ((IDebugDocumentContext2)_documentCxt).GetLanguageInfo(ref pbstrLanguage, ref pguidLanguage);
             }
@@ -510,17 +518,17 @@ namespace Microsoft.MIDebugEngine
         // The name of a stack frame is typically the name of the method being executed.
         int IDebugStackFrame2.GetName(out string name)
         {
-            name = null;
+            name = null!; // nullable annotations don't work for COM methods
 
             try
             {
-                if (_functionName != null)
+                if (_functionName is not null)
                 {
                     name = _functionName;
                 }
                 else
                 {
-                    name = EngineUtils.GetAddressDescription(Engine.DebuggedProcess, ThreadContext.pc.Value);
+                    name = GetAddressDescription();
                 }
 
                 return Constants.S_OK;
@@ -573,9 +581,9 @@ namespace Microsoft.MIDebugEngine
                                                 out string pbstrError,
                                                 out uint pichError)
         {
-            pbstrError = null;
+            pbstrError = null!; // nullable annotations don't work for COM methods
             pichError = 0;
-            ppExpr = null;
+            ppExpr = null!; // nullable annotations don't work for COM methods
 
             try
             {
@@ -593,7 +601,11 @@ namespace Microsoft.MIDebugEngine
             }
         }
 
+        private string GetAddressDescription()
+        {
+            return ThreadContext.pc.HasValue ? EngineUtils.GetAddressDescription(Engine.DebuggedProcess, ThreadContext.pc.Value) : ResourceStrings.UnknownCode;
+        }
+
         #endregion
     }
 }
-

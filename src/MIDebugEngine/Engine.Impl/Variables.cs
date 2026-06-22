@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using MICore;
@@ -6,7 +6,6 @@ using Microsoft.VisualStudio.Debugger.Interop;
 using Microsoft.VisualStudio.Debugger.Interop.DAP;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -32,7 +31,7 @@ namespace Microsoft.MIDebugEngine
         void AsyncError(IDebugEventCallback2 pExprCallback, IDebugProperty2 error);
         void SyncEval(enum_EVALFLAGS dwFlags = 0, DAPEvalFlags dwDAPFlags = 0);
         ThreadContext ThreadContext { get; }
-        VariableInformation FindChildByName(string name);
+        VariableInformation? FindChildByName(string name);
         string EvalDependentExpression(string expr);
         bool IsVisualized { get; }
         bool IsReadOnly();
@@ -45,16 +44,16 @@ namespace Microsoft.MIDebugEngine
 
     internal class SimpleVariableInformation
     {
-        public string Name { get; private set; }
+        public string Name { get; private set; } = string.Empty;
         public string Value { get; private set; }
         public string TypeName { get; private set; }
         public bool IsParameter { get; private set; }
 
-        internal SimpleVariableInformation(string name, bool isParam = false, string value = null, string type = null)
+        internal SimpleVariableInformation(string name, bool isParam = false, string? value = null, string? type = null)
         {
             Name = name;
-            Value = value;
-            TypeName = type;
+            Value = value ?? string.Empty;
+            TypeName = type ?? string.Empty;
             IsParameter = isParam;
         }
 
@@ -75,19 +74,23 @@ namespace Microsoft.MIDebugEngine
 
     internal sealed class VariableInformation : IVariableInformation
     {
-        public string Name { get; private set; }
-        public string Value { get; private set; }
-        public string TypeName { get; private set; }
+        public string Name { get; private set; } = string.Empty;
+        public string Value { get; private set; } = string.Empty;
+        public string TypeName { get; private set; } = string.Empty;
         public bool IsParameter { get; private set; }
-        public VariableInformation[] Children { get; private set; }
+        public VariableInformation[] Children
+        {
+            get { return _children ?? Array.Empty<VariableInformation>(); }
+            private set { _children = value; }
+        }
         public AD7Thread Client { get; private set; }
         public bool Error { get; private set; }
         public uint CountChildren { get; private set; }
         public bool IsChild { get; set; }
         public enum_DBG_ATTRIB_FLAGS Access { get; private set; }
-        public bool IsVisualized { get { return _parent == null ? false : _parent.IsVisualized; } }
+        public bool IsVisualized { get { return _parent is not null && _parent.IsVisualized; } }
         public enum_DEBUGPROP_INFO_FLAGS PropertyInfoFlags { get; set; }
-        private string DisplayHint { get; set; }
+        private string DisplayHint { get; set; } = string.Empty;
         public bool IsPreformatted { get; set; }
 
         static readonly Lazy<Regex> s_addressPattern = new Lazy<Regex>(() => new Regex(@"^(0x[0-9a-fA-F]+)\b"));
@@ -120,7 +123,7 @@ namespace Microsoft.MIDebugEngine
 
         public bool IsNullPointer()
         {
-            if (string.IsNullOrEmpty(TypeName) || !IsPointer(TypeName) || string.IsNullOrEmpty(Value))
+            if (IsNullOrEmpty(TypeName) || !IsPointer(TypeName) || IsNullOrEmpty(Value))
             {
                 return false;
             }
@@ -144,7 +147,7 @@ namespace Microsoft.MIDebugEngine
 
         public string FullName()   // Full expression used to re-compute the value
         {
-            if (_fullname == null)
+            if (_fullname is null)
             {
                 switch (VariableNodeType)
                 {
@@ -158,34 +161,33 @@ namespace Microsoft.MIDebugEngine
                         //    m_fullname = await m_engine.DebuggedProcess.MICommandFactory.VarInfoPathExpression(m_internalName);
                         //});
                         //evalTask.Wait();
+                        IVariableInformation parent = _parent ?? throw new InvalidOperationException("Field variables must have a parent.");
                         string op = ".";
-                        string parentName = _parent.FullName();
-                        if (IsPointer(_parent.TypeName))
+                        string parentName = parent.FullName();
+                        if (IsPointer(parent.TypeName))
                         {
                             op = "->";
                             // Underlying debugger sometimes has trouble with long expressions (parent-expression can be arbitrarily long),
                             // so attempt to simplify the expression by using ((parent-type)0xabc)->field instead of (parent-expression)->field 
                             ulong addr;
-                            if (_parent.Value.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                                    && ulong.TryParse(_parent.Value.Substring(2), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out addr))
+                            if (parent.Value.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                                    && ulong.TryParse(parent.Value.Substring(2), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out addr))
                             {
-                                parentName = '(' + _parent.TypeName + ')' + _parent.Value;
+                                parentName = '(' + parent.TypeName + ')' + parent.Value;
                             }
                         }
                         _fullname = '(' + parentName + ')' + op + _strippedName;
                         break;
                     case NodeType.Dereference:
-                        _fullname = "*(" + _parent.FullName() + ")";
+                        _fullname = "*(" + (_parent ?? throw new InvalidOperationException("Dereference variables must have a parent.")).FullName() + ")";
                         break;
                     case NodeType.BaseClass:
                     case NodeType.AccessQualifier:
-                        _fullname = _parent.FullName();
+                    case NodeType.AnonymousUnion:
+                        _fullname = (_parent ?? throw new InvalidOperationException("Child variables must have a parent.")).FullName();
                         break;
                     case NodeType.ArrayElement:
-                        _fullname = '(' + _parent.FullName() + ')' + Name;
-                        break;
-                    case NodeType.AnonymousUnion:
-                        _fullname = _parent.FullName();
+                        _fullname = '(' + (_parent ?? throw new InvalidOperationException("Array element variables must have a parent.")).FullName() + ')' + Name;
                         break;
                     default:
                         _fullname = String.Empty;
@@ -198,7 +200,7 @@ namespace Microsoft.MIDebugEngine
         {
             get
             {
-                if (!string.IsNullOrWhiteSpace(this.TypeName))
+                if (!IsNullOrWhiteSpace(this.TypeName))
                 {
                     for (int i = 0; i < s_stringTypes.Length; ++i)
                     {
@@ -225,7 +227,6 @@ namespace Microsoft.MIDebugEngine
             _attribsFetched = false;
             _isReadonly = false;
             Access = enum_DBG_ATTRIB_FLAGS.DBG_ATTRIB_NONE;
-            _fullname = null;
 
             lock (_debuggedProcess.ActiveVariables)
             {
@@ -241,7 +242,6 @@ namespace Microsoft.MIDebugEngine
             _strippedName = ProcessFormatSpecifiers(expr, out _format);
             Name = displayName;
             IsParameter = isParameter;
-            _parent = null;
             VariableNodeType = NodeType.Root;
         }
 
@@ -267,7 +267,7 @@ namespace Microsoft.MIDebugEngine
         }
 
         //this constructor is private because it should only be used internally to create children
-        private VariableInformation(TupleValue results, VariableInformation parent, string name = null)
+        private VariableInformation(TupleValue results, VariableInformation parent, string? name = null)
             : this(parent._ctx, parent._engine, parent.Client)
         {
             TypeName = results.TryFindString("type");
@@ -339,25 +339,39 @@ namespace Microsoft.MIDebugEngine
         public ThreadContext ThreadContext { get { return _ctx; } }
 
 
-        public VariableInformation FindChildByName(string name)
+        public VariableInformation? FindChildByName(string name)
         {
             EnsureChildren();
             if (CountChildren == 0)
             {
                 return null;
             }
-            Debug.Assert(Children != null, "Failed to find children");
-            VariableInformation var = Array.Find(Children, (c) => c.Name == name);
-            if (var != null)
+            if (_children is null)
             {
-                return var;
+                throw new InvalidOperationException("Failed to fetch child variables.");
             }
-            VariableInformation baseChild = null;
-            var = Array.Find(Children, (c) => (c.VariableNodeType == NodeType.BaseClass || c.VariableNodeType == NodeType.AnonymousUnion) && (baseChild = c.FindChildByName(name)) != null);
-            return baseChild;
+
+            foreach (VariableInformation child in _children)
+            {
+                if (child.Name == name)
+                {
+                    return child;
+                }
+            }
+
+            foreach (VariableInformation child in _children)
+            {
+                if ((child.VariableNodeType == NodeType.BaseClass || child.VariableNodeType == NodeType.AnonymousUnion) &&
+                    child.FindChildByName(name) is VariableInformation baseChild)
+                {
+                    return baseChild;
+                }
+            }
+
+            return null;
         }
 
-        private string _internalName;  // the MI debugger's private name for this value
+        private string _internalName = string.Empty;  // the MI debugger's private name for this value
         private AD7Engine _engine;
         private DebuggedProcess _debuggedProcess;
         private ThreadContext _ctx;
@@ -372,11 +386,12 @@ namespace Microsoft.MIDebugEngine
         /// <returns>The expression to send to the engine</returns>
         /// </summary>
         private delegate Task<string> DeferedFormatExpression(int threadId, uint frameLevel);
-        private DeferedFormatExpression _deferedFormatExpression;
-        private IVariableInformation _parent;
-        private string _format;
-        private string _strippedName;  // "Name" stripped of format specifiers
-        private string _fullname;
+        private DeferedFormatExpression? _deferedFormatExpression;
+        private IVariableInformation? _parent;
+        private string? _format;
+        private string _strippedName = string.Empty;  // "Name" stripped of format specifiers
+        private string? _fullname;
+        private VariableInformation[]? _children;
 
         public enum NodeType
         {
@@ -401,7 +416,7 @@ namespace Microsoft.MIDebugEngine
 
         private static Regex s_isFunction = new Regex(@".+\(.*\).*");
 
-        private string ProcessFormatSpecifiers(string exp, out string formatSpecifier)
+        private string ProcessFormatSpecifiers(string exp, out string? formatSpecifier)
         {
             formatSpecifier = null; // will be used with -var-set-format
 
@@ -486,9 +501,9 @@ namespace Microsoft.MIDebugEngine
                 {
                     _deferedFormatExpression = async (int threadId, uint frameLevel) =>
                     {
-                        string derefType = await GetDereferencedTypeStringAsync(expr, threadId, frameLevel);
+                        string? derefType = await GetDereferencedTypeStringAsync(expr, threadId, frameLevel);
 
-                        if (!string.IsNullOrEmpty(derefType))
+                        if (!IsNullOrEmpty(derefType))
                         {
                             // Cast 'exp' to a pointer of an array of type 'T' with size 'n' with '*(T(*)[n])(exp)'
                             return FormattableString.Invariant($"*({derefType}(*)[{count}])({expr})");
@@ -512,7 +527,7 @@ namespace Microsoft.MIDebugEngine
             return exp;
         }
 
-        private async Task<string> GetDereferencedTypeStringAsync(string expr, int threadId, uint frameLevel)
+        private async Task<string?> GetDereferencedTypeStringAsync(string expr, int threadId, uint frameLevel)
         {
             // TODO: Should we error if the current type is not a pointer type?
 
@@ -522,7 +537,7 @@ namespace Microsoft.MIDebugEngine
             if (results.ResultClass == ResultClass.done)
             {
                 string varName = results.TryFindString("name");
-                if (!String.IsNullOrWhiteSpace(varName))
+                if (!IsNullOrWhiteSpace(varName))
                 {
                     // Remove the variable we created as we don't track it.
                     await _engine.DebuggedProcess.MICommandFactory.VarDelete(varName);
@@ -585,7 +600,7 @@ namespace Microsoft.MIDebugEngine
         {
             this.VerifyNotDisposed();
 
-            string val = null;
+            string val = string.Empty;
             Task eval = Task.Run(async () =>
             {
                 val = await _engine.DebuggedProcess.MICommandFactory.DataEvaluateExpression(expr, Client.GetDebuggedThread().Id, _ctx.Level);
@@ -608,11 +623,11 @@ namespace Microsoft.MIDebugEngine
                 if (EngineUtils.IsConsoleExecCmd(_strippedName, out string _, out string consoleCommand))
                 {
                     // special case for executing raw mi commands. 
-                    string consoleResults = null;
+                    string consoleResults = string.Empty;
 
                     consoleResults = await MIDebugCommandDispatcher.ExecuteCommand(consoleCommand, _debuggedProcess, ignoreFailures: true);
                     Value = consoleResults;
-                    this.TypeName = null;
+                    this.TypeName = string.Empty;
                 }
                 else
                 {
@@ -626,7 +641,7 @@ namespace Microsoft.MIDebugEngine
                         // "Limit on string chars or array elements to print is <number>."
                         // "Limit on string chars or array elements to print is unlimited."
                         string numElementsStr = Regex.Match(showPrintElementsResult, @"\d+").Value;
-                        if (!string.IsNullOrEmpty(numElementsStr) && int.TryParse(numElementsStr, out numElements) && numElements != 0)
+                        if (!IsNullOrEmpty(numElementsStr) && int.TryParse(numElementsStr, out numElements) && numElements != 0)
                         {
                             await MIDebugCommandDispatcher.ExecuteCommand("set print elements 0", _debuggedProcess, ignoreFailures: true);
                         }
@@ -642,7 +657,7 @@ namespace Microsoft.MIDebugEngine
                     {
                         string deferedExpression = await _deferedFormatExpression(threadId, frameLevel);
 
-                        if (!string.IsNullOrEmpty(deferedExpression))
+                        if (!IsNullOrEmpty(deferedExpression))
                         {
                             expression = deferedExpression;
                         }
@@ -683,7 +698,7 @@ namespace Microsoft.MIDebugEngine
                             _attribsFetched = true;
                         }
                         Value = results.TryFindString("value");
-                        if ((string.IsNullOrEmpty(Value) || _format != null) && !string.IsNullOrEmpty(_internalName))
+                        if ((IsNullOrEmpty(Value) || _format != null) && !IsNullOrEmpty(_internalName))
                         {
                             if (_format != null)
                             {
@@ -728,9 +743,8 @@ namespace Microsoft.MIDebugEngine
                 if (e.InnerException != null)
                     e = e.InnerException;
 
-                UnexpectedMIResultException miException = e as UnexpectedMIResultException;
                 string message;
-                if (miException != null && miException.MIError != null)
+                if (e is UnexpectedMIResultException { MIError: not null } miException)
                     message = miException.MIError;
                 else
                     message = e.Message;
@@ -743,8 +757,11 @@ namespace Microsoft.MIDebugEngine
         {
             this.VerifyNotDisposed();
 
-            Debug.Assert(_internalName != null);
-            Debug.Assert(_format != null);
+            if (IsNullOrWhiteSpace(_internalName) || _format is null)
+            {
+                throw new InvalidOperationException("Cannot format a variable before it has an internal name and format.");
+            }
+
             Results results = await _engine.DebuggedProcess.MICommandFactory.VarSetFormat(_internalName, _format, ResultClass.None);
             if (results.ResultClass == ResultClass.done)
             {
@@ -753,7 +770,7 @@ namespace Microsoft.MIDebugEngine
                     // Sample output for GDB:     ^done,format="natural",value="123"
                     this.Value = results.FindString("value");
                 }
-                else if (results.TryFind("changelist", out ValueListValue changeList))
+                else if (results.TryFind("changelist", out ValueListValue? changeList) && changeList is not null && changeList.Content.Length > 0)
                 {
                     // Sample output for LLDB:    ^done,changelist=[{name="var1",value="123",in_scope="true",type_changed="false",type_changed="0"}]
                     this.Value = changeList.Content[0].FindString("value");
@@ -916,7 +933,7 @@ namespace Microsoft.MIDebugEngine
             {
                 return true;
             }
-            else if (!string.IsNullOrWhiteSpace(TypeName))
+            else if (!IsNullOrWhiteSpace(TypeName))
             {
                 return TypeName[TypeName.Length - 1] == ']';
             }
@@ -932,7 +949,7 @@ namespace Microsoft.MIDebugEngine
         {
             if (!_attribsFetched)
             {
-                if (string.IsNullOrEmpty(_internalName))
+                if (IsNullOrEmpty(_internalName))
                 {
                     return true;
                 }
@@ -993,7 +1010,7 @@ namespace Microsoft.MIDebugEngine
             //mi -var-delete deletes all children, so only top level variables should be added to the delete list
             //Additionally, we create variables for anything we try to evaluate. Only succesful evaluations get internal names, 
             //so look for that.
-            if (!IsChild && !string.IsNullOrWhiteSpace(_internalName))
+            if (!IsChild && !IsNullOrWhiteSpace(_internalName))
             {
                 if (!_debuggedProcess.IsClosed)
                 {

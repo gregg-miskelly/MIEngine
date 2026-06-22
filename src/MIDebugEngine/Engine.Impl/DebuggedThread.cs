@@ -1,11 +1,10 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using MICore;
 using Microsoft.DebugEngineHost;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -41,8 +40,8 @@ namespace Microsoft.MIDebugEngine
         private bool _full;                    // indicates whether the cache has already been filled via -thread-info
         private ISampleEngineCallback _callback;
         private DebuggedProcess _debugger;
-        private List<DebuggedThread> _deadThreads;
-        private List<DebuggedThread> _newThreads;
+        private List<DebuggedThread>? _deadThreads;
+        private List<DebuggedThread>? _newThreads;
         private Dictionary<string, List<int>> _threadGroups;
         private static uint s_targetId = uint.MaxValue;
         private const string c_defaultGroupId = "i1";  // gdb's default group id, also used for any process without group ids
@@ -51,7 +50,7 @@ namespace Microsoft.MIDebugEngine
         {
             get
             {
-                if (_deadThreads == null)
+                if (_deadThreads is null)
                 {
                     _deadThreads = new List<DebuggedThread>();
                 }
@@ -63,7 +62,7 @@ namespace Microsoft.MIDebugEngine
         {
             get
             {
-                if (_newThreads == null)
+                if (_newThreads is null)
                 {
                     _newThreads = new List<DebuggedThread>();
                 }
@@ -104,7 +103,7 @@ namespace Microsoft.MIDebugEngine
             }
         }
 
-        internal async Task<DebuggedThread> GetThread(int id)
+        internal async Task<DebuggedThread?> GetThread(int id)
         {
             DebuggedThread[] threads = await GetThreads();
             foreach (var t in threads)
@@ -117,7 +116,7 @@ namespace Microsoft.MIDebugEngine
             return null;
         }
 
-        internal async Task<List<ThreadContext>> StackFrames(DebuggedThread thread)
+        internal async Task<List<ThreadContext>?> StackFrames(DebuggedThread thread)
         {
             lock (_threadList)
             {
@@ -130,7 +129,7 @@ namespace Microsoft.MIDebugEngine
                     return _stackFrames[thread.Id];
                 }
             }
-            List<ThreadContext> stack = null;
+            List<ThreadContext>? stack = null;
             try
             {
                 stack = await WalkStack(thread);
@@ -142,15 +141,31 @@ namespace Microsoft.MIDebugEngine
             }
             lock (_threadList)
             {
-                _stackFrames[thread.Id] = stack;
-                _topContext[thread.Id] = (stack != null && stack.Count > 0) ? stack[0] : null;
-                return _stackFrames[thread.Id];
+                if (stack is not null)
+                {
+                    _stackFrames[thread.Id] = stack;
+                    if (stack.Count > 0)
+                    {
+                        _topContext[thread.Id] = stack[0];
+                    }
+                    else
+                    {
+                        _topContext.Remove(thread.Id);
+                    }
+                }
+                else
+                {
+                    _stackFrames.Remove(thread.Id);
+                    _topContext.Remove(thread.Id);
+                }
+
+                return stack;
             }
         }
 
-        internal async Task<ThreadContext> GetThreadContext(DebuggedThread thread)
+        internal async Task<ThreadContext?> GetThreadContext(DebuggedThread? thread)
         {
-            if (thread == null)
+            if (thread is null)
                 return null;
 
             lock (_threadList)
@@ -178,14 +193,14 @@ namespace Microsoft.MIDebugEngine
             }
         }
 
-        internal async Task ThreadCreatedEvent(int id, string groupId)
+        internal async Task ThreadCreatedEvent(int id, string? groupId)
         {
             // Mark that the threads have changed
             lock (_threadList)
             {
                 {
                     var thread = _threadList.Find(t => t.Id == id);
-                    if (thread == null)
+                    if (thread is null)
                     {
                         _stateChange = true;
                     }
@@ -194,7 +209,7 @@ namespace Microsoft.MIDebugEngine
                 // This must go before getting the thread-info for the thread since that method call is async.
                 // The threadId must be added to the thread-group before the new thread is created or else it will
                 // be marked as a child thread and then thread-created and thread-exited won't be sent to the UI
-                if (string.IsNullOrEmpty(groupId))
+                if (IsNullOrEmpty(groupId))
                 {
                     groupId = c_defaultGroupId;
                 }
@@ -207,7 +222,7 @@ namespace Microsoft.MIDebugEngine
             }
 
             // Run Thread-info now to get the target-id
-            ResultValue resVal = null;
+            ResultValue? resVal = null;
             if (id >= 0)
             {
                 uint? tid = null;
@@ -231,7 +246,7 @@ namespace Microsoft.MIDebugEngine
                 }
             }
 
-            if (resVal != null)
+            if (resVal is not null)
             {
                 lock (_threadList)
                 {
@@ -250,11 +265,11 @@ namespace Microsoft.MIDebugEngine
 
         internal void ThreadExitedEvent(int id)
         {
-            DebuggedThread thread = null;
+            DebuggedThread? thread = null;
             lock (_threadList)
             {
                 thread = _threadList.Find(t => t.Id == id);
-                if (thread != null)
+                if (thread is not null)
                 {
                     DeadThreads.Add(thread);
                     _threadList.Remove(thread);
@@ -269,7 +284,7 @@ namespace Microsoft.MIDebugEngine
                     }
                 }
             }
-            if (thread != null)
+            if (thread is not null)
             {
                 SendThreadEvents(null, null);
             }
@@ -289,9 +304,9 @@ namespace Microsoft.MIDebugEngine
             return _threadGroups.ContainsKey(c_defaultGroupId) && _threadGroups[c_defaultGroupId].Contains(tid);
         }
 
-        private async Task<List<ThreadContext>> WalkStack(DebuggedThread thread)
+        private async Task<List<ThreadContext>?> WalkStack(DebuggedThread thread)
         {
-            List<ThreadContext> stack = null;
+            List<ThreadContext>? stack = null;
             TupleValue[] frameinfo = await _debugger.MICommandFactory.StackListFrames(thread.Id, 0, 1000);
             if (frameinfo == null)
             {
@@ -314,21 +329,21 @@ namespace Microsoft.MIDebugEngine
 
             // don't report source line info for modules marked as IgnoreSource
             bool ignoreSource = false;
-            if (pc != null)
+            if (pc is not null)
             {
                 var module = _debugger.FindModule(pc.Value);
-                if (module != null && module.IgnoreSource)
+                if (module is not null && module.IgnoreSource)
                 {
                     ignoreSource = true;
                 }
             }
-            MITextPosition textPosition = !ignoreSource ? MITextPosition.TryParse(this._debugger, frame) : null;
+            MITextPosition? textPosition = !ignoreSource ? MITextPosition.TryParse(this._debugger, frame) : null;
 
-            string func = frame.TryFindString("func");
+            string? func = frame.TryFindString("func");
             uint level = frame.FindUint("level");
-            string from = frame.TryFindString("from");
+            string? from = frame.TryFindString("from");
 
-            return new ThreadContext(pc, textPosition, func, level, from);
+            return new ThreadContext(pc, textPosition!, func!, level, from!);
         }
 
         private bool TryGetTidFromTargetId(string targetId, out uint tid)
@@ -384,13 +399,13 @@ namespace Microsoft.MIDebugEngine
         {
             isNewThread = false;
             int threadId = resVal.FindInt("id");
-            string targetId = resVal.TryFindString("target-id");
+            string? targetId = resVal.TryFindString("target-id");
 
             DebuggedThread thread = FindThread(threadId, out isNewThread);
             thread.Alive = true;
 
             // Only update targetId if it is a new thread.
-            if (isNewThread && !String.IsNullOrEmpty(targetId))
+            if (isNewThread && !IsNullOrEmpty(targetId))
             {
                 uint tid = 0;
                 if (TryGetTidFromTargetId(targetId, out tid))
@@ -406,9 +421,9 @@ namespace Microsoft.MIDebugEngine
             return thread;
         }
 
-        private async Task<ThreadContext> CollectThreadsInfo(int cxtThreadId)
+        private async Task<ThreadContext?> CollectThreadsInfo(int cxtThreadId)
         {
-            ThreadContext ret = null;
+            ThreadContext? ret = null;
             // set of threads has changed or thread locations have been asked for
             Results threadsinfo = await _debugger.MICommandFactory.ThreadInfo();
 
@@ -475,12 +490,12 @@ namespace Microsoft.MIDebugEngine
             return ret;
         }
 
-        internal void SendThreadEvents(object sender, EventArgs e)
+        internal void SendThreadEvents(object? sender, EventArgs? e)
         {
             if (_debugger.Engine.ProgramCreateEventSent)
             {
-                List<DebuggedThread> deadThreads;
-                List<DebuggedThread> newThreads;
+                List<DebuggedThread>? deadThreads;
+                List<DebuggedThread>? newThreads;
                 lock (_threadList)
                 {
                     deadThreads = _deadThreads;
@@ -488,12 +503,13 @@ namespace Microsoft.MIDebugEngine
                     newThreads = _newThreads;
                     _newThreads = null;
                 }
-                if (newThreads != null)
+                if (newThreads is not null)
                 {
                     if (newThreads.Count == _threadList.Count)
                     {
                         // These are the first threads. Send a processInfoUpdateEvent too.
-                        AD7ProcessInfoUpdatedEvent.Send(_debugger.Engine, _debugger.LaunchOptions.ExePath, (uint)_debugger.PidByInferior("i1"));
+                        Debug.Assert(_debugger.LaunchOptions.ExePath is not null, "Expected ExePath to be available when the first thread is reported.");
+                        AD7ProcessInfoUpdatedEvent.Send(_debugger.Engine, _debugger.LaunchOptions.ExePath ?? string.Empty, (uint)_debugger.PidByInferior("i1"));
                     }
                     foreach (var newt in newThreads)
                     {
@@ -504,7 +520,7 @@ namespace Microsoft.MIDebugEngine
                         }
                     }
                 }
-                if (deadThreads != null)
+                if (deadThreads is not null)
                 {
                     foreach (var dead in deadThreads)
                     {

@@ -28,7 +28,7 @@ namespace Microsoft.MIDebugEngine
 
         public int Clone(out I ppEnum)
         {
-            ppEnum = null;
+            ppEnum = null!; // nullable annotations don't work for COM methods
             return Constants.E_NOTIMPL;
         }
 
@@ -57,7 +57,7 @@ namespace Microsoft.MIDebugEngine
         {
             uint celtFetched;
 
-            return Move(celt, null, out celtFetched);
+            return Move(celt, null!, out celtFetched);
         }
 
         private int Move(uint celt, T[] rgelt, out uint celtFetched)

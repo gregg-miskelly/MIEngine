@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using Microsoft.VisualStudio.Debugger.Interop;
-using System.Diagnostics;
 using MICore;
 
 namespace Microsoft.MIDebugEngine
@@ -30,39 +29,42 @@ namespace Microsoft.MIDebugEngine
             _debuggedThread = debuggedThread;
         }
 
-        private ThreadContext GetThreadContext()
+        private ThreadContext? GetThreadContext()
         {
-            ThreadContext threadContext = null;
+            ThreadContext? threadContext = null;
             _engine.DebuggedProcess.WorkerThread.RunOperation(async () => threadContext = await _engine.DebuggedProcess.ThreadCache.GetThreadContext(_debuggedThread));
 
             return threadContext;
         }
 
-        private string GetCurrentLocation(bool fIncludeModuleName)
+        private string? GetCurrentLocation(bool fIncludeModuleName)
         {
-            ThreadContext cxt = GetThreadContext();
-            string location = null;
-            if (cxt != null)
+            ThreadContext? cxt = GetThreadContext();
+            string? location = null;
+            if (cxt is not null)
             {
-                location = "";
+                location = string.Empty;
                 if (fIncludeModuleName)
                 {
-                    if (cxt.From != null)
+                    if (cxt.From is not null)
                     {
                         location = cxt.From + '!';
                     }
                     else
                     {
-                        DebuggedModule module = cxt.FindModule(_engine.DebuggedProcess);
-                        if (module != null)
+                        DebuggedModule? module = cxt.FindModule(_engine.DebuggedProcess);
+                        if (module is not null)
                         {
                             location = module.Name + '!';
                         }
                     }
                 }
-                if (cxt.Function == null)
+                if (cxt.Function is null)
                 {
-                    location += _engine.GetAddressDescription(cxt.pc.Value);
+                    if (cxt.pc.HasValue)
+                    {
+                        location += _engine.GetAddressDescription(cxt.pc.Value);
+                    }
                 }
                 else
                 {
@@ -109,7 +111,7 @@ namespace Microsoft.MIDebugEngine
         // and or construct it on demand instead of walking the entire stack.
         int IDebugThread2.EnumFrameInfo(enum_FRAMEINFO_FLAGS dwFieldSpec, uint nRadix, out IEnumDebugFrameInfo2 enumObject)
         {
-            enumObject = null;
+            enumObject = null!; // nullable annotations don't work for COM methods
             try
             {
                 uint radix = _engine.CurrentRadix();
@@ -122,24 +124,24 @@ namespace Microsoft.MIDebugEngine
                 }
 
                 // get the thread's stack frames
-                System.Collections.Generic.List<ThreadContext> stackFrames = null;
+                List<ThreadContext>? stackFrames = null;
                 _engine.DebuggedProcess.WorkerThread.RunOperation(async () => stackFrames = await _engine.DebuggedProcess.ThreadCache.StackFrames(_debuggedThread));
-                int numStackFrames = stackFrames != null ? stackFrames.Count : 0;
                 FRAMEINFO[] frameInfoArray;
 
-                if (numStackFrames == 0)
+                if (stackFrames is null || stackFrames.Count == 0)
                 {
                     // failed to walk any frames. Return an empty stack.
-                    frameInfoArray = new FRAMEINFO[0];
+                    frameInfoArray = Array.Empty<FRAMEINFO>();
                 }
                 else
                 {
+                    int numStackFrames = stackFrames.Count;
                     uint low = stackFrames[0].Level;
                     uint high = stackFrames[stackFrames.Count - 1].Level;
                     FilterUnknownFrames(stackFrames);
                     numStackFrames = stackFrames.Count;
                     frameInfoArray = new FRAMEINFO[numStackFrames];
-                    List<ArgumentList> parameters = null;
+                    List<ArgumentList>? parameters = null;
 
                     if ((dwFieldSpec & enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_ARGS) != 0 && !_engine.DebuggedProcess.MICommandFactory.SupportsFrameFormatting)
                     {
@@ -149,9 +151,9 @@ namespace Microsoft.MIDebugEngine
 
                     for (int i = 0; i < numStackFrames; i++)
                     {
-                        var p = parameters != null ? parameters.Find((ArgumentList t) => t.Item1 == stackFrames[i].Level) : null;
+                        ArgumentList? p = parameters?.Find(t => t.Item1 == stackFrames[i].Level);
                         AD7StackFrame frame = new AD7StackFrame(_engine, this, stackFrames[i]);
-                        frame.SetFrameInfo(dwFieldSpec, out frameInfoArray[i], p != null ? p.Item2 : null);
+                        frame.SetFrameInfo(dwFieldSpec, out frameInfoArray[i], p is not null ? p.Item2 : new List<SimpleVariableInformation>());
                     }
                 }
 
@@ -174,7 +176,7 @@ namespace Microsoft.MIDebugEngine
             for (int i = 0; i < stackFrames.Count;)
             {
                 // replace sequences of "??" with one UnknownCode frame
-                if (stackFrames[i].Function == null || stackFrames[i].Function.Equals("??", StringComparison.Ordinal))
+                if (stackFrames[i].Function is null || stackFrames[i].Function.Equals("??", StringComparison.Ordinal))
                 {
                     if (lastWasQuestion)
                     {
@@ -182,7 +184,7 @@ namespace Microsoft.MIDebugEngine
                         continue;
                     }
                     lastWasQuestion = true;
-                    stackFrames[i] = new ThreadContext(stackFrames[i].pc, stackFrames[i].TextPosition, ResourceStrings.UnknownCode, stackFrames[i].Level, null);
+                    stackFrames[i] = new ThreadContext(stackFrames[i].pc, stackFrames[i].TextPosition, ResourceStrings.UnknownCode, stackFrames[i].Level, stackFrames[i].From);
                 }
                 else
                 {
@@ -321,15 +323,15 @@ namespace Microsoft.MIDebugEngine
 
         int IDebugThread2.GetLogicalThread(IDebugStackFrame2 stackFrame, out IDebugLogicalThread2 logicalThread)
         {
-            Debug.Fail("This function is not called by the debugger");
+            System.Diagnostics.Debug.Fail("This function is not called by the debugger");
 
-            logicalThread = null;
+            logicalThread = null!; // nullable annotations don't work for COM methods
             return Constants.E_NOTIMPL;
         }
 
         int IDebugThread2.SetThreadName(string name)
         {
-            Debug.Fail("This function is not called by the debugger");
+            System.Diagnostics.Debug.Fail("This function is not called by the debugger");
 
             return Constants.E_NOTIMPL;
         }

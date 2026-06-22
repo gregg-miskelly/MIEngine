@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using Microsoft.VisualStudio.Debugger.Interop;
-using System.Diagnostics;
 using System.Collections.ObjectModel;
 using System.Threading;
 using MICore;
@@ -25,11 +24,11 @@ namespace Microsoft.MIDebugEngine
             _eventCallback = HostMarshal.GetThreadSafeEventCallback(ad7Callback);
         }
 
-        public void Send(IDebugEvent2 eventObject, string iidEvent, IDebugProgram2 program, IDebugThread2 thread)
+        public void Send(IDebugEvent2 eventObject, string iidEvent, IDebugProgram2? program, IDebugThread2? thread)
         {
             uint attributes;
             Guid riidEvent = new Guid(iidEvent);
-            if (!(eventObject is AD7OutputDebugStringEvent))
+            if (eventObject is not AD7OutputDebugStringEvent)
             {
                 _engine.Logger.WriteLine(LogLevel.Verbose, "Send Event {0}", eventObject.GetType().Name);
             }
@@ -37,9 +36,9 @@ namespace Microsoft.MIDebugEngine
             EngineUtils.RequireOk(_eventCallback.Event(_engine, null, program, thread, eventObject, ref riidEvent, attributes));
         }
 
-        public void Send(IDebugEvent2 eventObject, string iidEvent, IDebugThread2 thread)
+        public void Send(IDebugEvent2 eventObject, string iidEvent, IDebugThread2? thread)
         {
-            IDebugProgram2 program = _engine;
+            IDebugProgram2? program = _engine;
             if (!_engine.ProgramCreateEventSent)
             {
                 // Any events before programe create shouldn't include the program
@@ -72,12 +71,15 @@ namespace Microsoft.MIDebugEngine
         {
             // This will get called when the entrypoint breakpoint is fired because the engine sends a mod-load event
             // for the exe.
-            if (_engine.DebuggedProcess != null)
+            DebuggedProcess process = _engine.DebuggedProcess;
+            if (process is null)
             {
-                Debug.Assert(_engine.DebuggedProcess.WorkerThread.IsPollThread());
+                throw new InvalidOperationException();
             }
 
-            AD7Module ad7Module = new AD7Module(debuggedModule, _engine.DebuggedProcess);
+            Debug.Assert(process.WorkerThread.IsPollThread());
+
+            AD7Module ad7Module = new AD7Module(debuggedModule, process);
             AD7ModuleLoadEvent eventObject = new AD7ModuleLoadEvent(ad7Module, true /* this is a module load */);
 
             debuggedModule.Client = ad7Module;
@@ -90,16 +92,29 @@ namespace Microsoft.MIDebugEngine
 
         public void OnSymbolsLoaded(DebuggedModule module)
         {
-            var eventObject = new AD7SymbolLoadEvent(module.Client as AD7Module);
+            if (module.Client is not AD7Module ad7Module)
+            {
+                throw new InvalidOperationException();
+            }
+
+            var eventObject = new AD7SymbolLoadEvent(ad7Module);
             Send(eventObject, AD7SymbolLoadEvent.IID, null);
         }
 
         public void OnModuleUnload(DebuggedModule debuggedModule)
         {
-            Debug.Assert(_engine.DebuggedProcess.WorkerThread.IsPollThread());
+            DebuggedProcess process = _engine.DebuggedProcess;
+            if (process is null)
+            {
+                throw new InvalidOperationException();
+            }
 
-            AD7Module ad7Module = (AD7Module)debuggedModule.Client;
-            Debug.Assert(ad7Module != null);
+            Debug.Assert(process.WorkerThread.IsPollThread());
+
+            if (debuggedModule.Client is not AD7Module ad7Module)
+            {
+                throw new InvalidOperationException();
+            }
 
             AD7ModuleLoadEvent eventObject = new AD7ModuleLoadEvent(ad7Module, false /* this is a module unload */);
 
@@ -214,7 +229,7 @@ namespace Microsoft.MIDebugEngine
             Send(eventObject, AD7ExceptionEvent.IID, ad7Thread);
         }
 
-        public void OnExpressionEvaluationComplete(IVariableInformation var, IDebugProperty2 prop = null)
+        public void OnExpressionEvaluationComplete(IVariableInformation var, IDebugProperty2? prop = null)
         {
             AD7ExpressionCompleteEvent eventObject = new AD7ExpressionCompleteEvent(_engine, var, prop);
             Send(eventObject, AD7ExpressionCompleteEvent.IID, var.Client);
@@ -277,9 +292,9 @@ namespace Microsoft.MIDebugEngine
             Send(eventObject, AD7BreakpointUnboundEvent.IID, null);
         }
 
-        public void OnCustomDebugEvent(Guid guidVSService, Guid sourceId, int messageCode, object parameter1, object parameter2)
+        public void OnCustomDebugEvent(Guid guidVSService, Guid sourceId, int messageCode, object? parameter1, object? parameter2)
         {
-            var eventObject = new AD7CustomDebugEvent(guidVSService, sourceId, messageCode, parameter1, parameter2);
+            var eventObject = new AD7CustomDebugEvent(guidVSService, sourceId, messageCode, parameter1!, parameter2!);
             Send(eventObject, AD7CustomDebugEvent.IID, null);
         }
 

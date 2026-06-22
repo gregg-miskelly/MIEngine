@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
@@ -6,7 +6,6 @@ using Microsoft.VisualStudio.Debugger.Interop;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Diagnostics;
 using MICore;
 
 namespace Microsoft.MIDebugEngine
@@ -14,8 +13,8 @@ namespace Microsoft.MIDebugEngine
     // This class manages breakpoints for the engine. 
     internal class BreakpointManager
     {
-        private AD7Engine _engine;
-        private System.Collections.Generic.List<AD7PendingBreakpoint> _pendingBreakpoints;
+        private readonly AD7Engine _engine;
+        private readonly System.Collections.Generic.List<AD7PendingBreakpoint> _pendingBreakpoints;
         public const ulong INVALID_ADDRESS = 0xffffffffffffffff;
 
         public BreakpointManager(AD7Engine engine)
@@ -53,9 +52,12 @@ namespace Microsoft.MIDebugEngine
         /// <param name="args"></param>
         public async Task BreakpointModified(object sender, EventArgs args)
         {
-            MICore.Debugger.ResultEventArgs res = args as MICore.Debugger.ResultEventArgs;
+            if (args is not MICore.Debugger.ResultEventArgs res)
+            {
+                return;
+            }
+
             MICore.ResultValue bkpt = res.Results.Find("bkpt");
-            string bkptId = null;
             //
             // =breakpoint-modified,
             //    bkpt ={number="2",type="breakpoint",disp="keep",enabled="y",addr="<MULTIPLE>",times="0",original-location="main.cpp:220"},locations=[
@@ -63,17 +65,21 @@ namespace Microsoft.MIDebugEngine
             //          { number="2.2",enabled="y",addr="0x9c2149f2",func="Foo::bar<float>(float)",file="main.cpp",fullname="C:\\\\...\\\\main.cpp",line="220",thread-groups=["i1"]}]}
             // note: the ".x" part of the breakpoint number never appears in stopping events, that is, when executing at one of these addresses 
             //       the stopping event delivered contains bkptno="2"
-            bkptId = bkpt.FindString("number");
+            string? bkptId = bkpt.TryFindString("number");
+            if (bkptId is null)
+            {
+                return;
+            }
 
             AD7PendingBreakpoint pending = CodeBreakpoints.FirstOrDefault((p) => { return p.BreakpointId == bkptId; });
-            if (pending == null)
+            if (pending is null)
             {
                 return;
             }
 
             // Sync GDB's hit count ("times") for pass count breakpoints.
             // e.g. =breakpoint-modified,bkpt={number="1",...,times="5",ignore="2",...}
-            string timesStr = bkpt.TryFindString("times");
+            string? timesStr = bkpt.TryFindString("times");
             if (!string.IsNullOrEmpty(timesStr) && uint.TryParse(timesStr, out uint times))
             {
                 foreach (AD7BoundBreakpoint boundBp in pending.EnumBoundBreakpoints())
@@ -95,7 +101,7 @@ namespace Microsoft.MIDebugEngine
                 }
             }
 
-            string warning = bkpt.TryFindString("warning");
+            string? warning = bkpt.TryFindString("warning");
             if (!string.IsNullOrEmpty(warning))
             {
                 pending.SetError(new AD7ErrorBreakpoint(pending, warning), true);
@@ -163,21 +169,21 @@ namespace Microsoft.MIDebugEngine
             }
         }
 
-        private AD7PendingBreakpoint BindToAddress(string bkptno, ulong addr, /*OPTIONAL*/ TupleValue frame, out AD7BoundBreakpoint bbp)
+        private AD7PendingBreakpoint? BindToAddress(string bkptno, ulong addr, /*OPTIONAL*/ TupleValue? frame, out AD7BoundBreakpoint? bbp)
         {
             bbp = null;
             AD7PendingBreakpoint pending = CodeBreakpoints.FirstOrDefault((p) => { return p.BreakpointId == bkptno; });
-            if (pending == null)
+            if (pending is null)
             {
                 return null;
             }
             // the breakpoint number is known, check to see if it is known to be bound to this address
             bbp = Array.Find(pending.EnumBoundBreakpoints(), (b) => b.Addr == addr);
-            if (bbp == null)
+            if (bbp is null)
             {
                 // add this address as a bound breakpoint
                 bbp = Array.Find(pending.EnumBoundBreakpoints(), (b) => b.Addr == 0);
-                if (bbp != null)    // <MULTIPLE>
+                if (bbp is not null)    // <MULTIPLE>
                 {
                     bbp.UpdateAddr(addr);
                 }
@@ -193,7 +199,7 @@ namespace Microsoft.MIDebugEngine
         // Note that there are still cases where gdb won't return the address for a breakpoint 
         // (breakpoint that binds to multiple locations) in which case the bktpno is the best match
         // the engine can do
-        private AD7BoundBreakpoint[] FindBoundBreakpointsAtAddress(string bkptno, ulong addr, /*OPTIONAL*/ TupleValue frame)
+        private AD7BoundBreakpoint[] FindBoundBreakpointsAtAddress(string bkptno, ulong addr, /*OPTIONAL*/ TupleValue? frame)
         {
             // Add all bound bps whose address match
             List<AD7BoundBreakpoint> matchingBoundBreakpoints = new List<AD7BoundBreakpoint>();
@@ -203,9 +209,9 @@ namespace Microsoft.MIDebugEngine
             }
 
             // Include the bp whose bkptno matches
-            AD7BoundBreakpoint bbp;
+            AD7BoundBreakpoint? bbp;
             BindToAddress(bkptno, addr, frame, out bbp);
-            if (bbp != null)
+            if (bbp is not null)
             {
                 matchingBoundBreakpoints.Add(bbp);
             }
@@ -214,7 +220,7 @@ namespace Microsoft.MIDebugEngine
         }
 
 
-        public AD7BoundBreakpoint[] FindHitBreakpoints(string bkptno, ulong addr, /*OPTIONAL*/ TupleValue frame, out bool fContinue)
+        public AD7BoundBreakpoint[]? FindHitBreakpoints(string bkptno, ulong addr, /*OPTIONAL*/ TupleValue? frame, out bool fContinue)
         {
             fContinue = false;
             List<AD7BoundBreakpoint> hitBoundBreakpoints = new List<AD7BoundBreakpoint>();
@@ -251,16 +257,16 @@ namespace Microsoft.MIDebugEngine
             return hitBoundBreakpoints.Count != 0 ? hitBoundBreakpoints.ToArray() : null;
         }
 
-        public AD7BoundBreakpoint FindHitWatchpoint(string bkptno, out bool fContinue)
+        public AD7BoundBreakpoint? FindHitWatchpoint(string bkptno, out bool fContinue)
         {
             fContinue = false;
             var pending = DataBreakpoints.FirstOrDefault((b) => b.BreakpointId == bkptno);
-            if (pending == null)
+            if (pending is null)
             {
                 return null;
             }
             var bound = pending.EnumBoundBreakpoints().FirstOrDefault();
-            if (bound == null)
+            if (bound is null)
             {
                 return null;
             }
@@ -285,7 +291,7 @@ namespace Microsoft.MIDebugEngine
         public async Task DeleteBreakpointsPendingDeletion()
         {
             //push all of the pending breakpoints to delete into a new list so that we avoid iterator invalidation
-            List<AD7PendingBreakpoint> breakpointsPendingDeletion = null;
+            List<AD7PendingBreakpoint>? breakpointsPendingDeletion = null;
 
             lock (_pendingBreakpoints)
             {
@@ -293,7 +299,7 @@ namespace Microsoft.MIDebugEngine
                 _pendingBreakpoints.RemoveAll((b) => b.Deleted);
             }
 
-            if (breakpointsPendingDeletion != null)
+            if (breakpointsPendingDeletion is not null)
             {
                 foreach (var b in breakpointsPendingDeletion)
                 {

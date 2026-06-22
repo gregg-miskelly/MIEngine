@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
@@ -7,7 +7,6 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Diagnostics;
 using MICore;
 using System.Globalization;
 
@@ -16,12 +15,12 @@ namespace Microsoft.MIDebugEngine
     internal class DisasmInstruction
     {
         public ulong Addr;
-        public string AddressString;
-        public string Symbol;
+        public string AddressString = string.Empty;
+        public string? Symbol;
         public uint Offset;
-        public string Opcode;
-        public string CodeBytes;
-        public string File;
+        public string Opcode = string.Empty;
+        public string? CodeBytes;
+        public string? File;
         public uint Line;
         public uint OffsetInLine;
     };
@@ -69,7 +68,7 @@ namespace Microsoft.MIDebugEngine
             return 0 <= i && i <= _instructions.Length;
         }
 
-        public bool TryFetch(ulong addr, int cnt, out ICollection<DisasmInstruction> instructions)
+        public bool TryFetch(ulong addr, int cnt, out ICollection<DisasmInstruction>? instructions)
         {
             instructions = null;
             if (!Contains(addr, cnt))
@@ -84,7 +83,7 @@ namespace Microsoft.MIDebugEngine
             return true;
         }
 
-        public bool TryFetch(ulong startAddr, ulong endAddr, out ICollection<DisasmInstruction> instructions)
+        public bool TryFetch(ulong startAddr, ulong endAddr, out ICollection<DisasmInstruction>? instructions)
         {
             instructions = null;
             if (!Contains(startAddr, 1))
@@ -97,7 +96,7 @@ namespace Microsoft.MIDebugEngine
             return true;
         }
 
-        public DisasmInstruction At(ulong addr)
+        public DisasmInstruction? At(ulong addr)
         {
             Debug.Assert(Contains(addr, 1), "Address not in block");
             Touch = ++s_touchCount;
@@ -128,10 +127,10 @@ namespace Microsoft.MIDebugEngine
             _disassemlyCache = new SortedList<ulong, DisassemblyBlock>();
         }
 
-        private ICollection<DisasmInstruction> UpdateCache(ulong address, int nInstructions, DisasmInstruction[] instructions)
+        private ICollection<DisasmInstruction>? UpdateCache(ulong address, int nInstructions, DisasmInstruction[] instructions)
         {
-            ICollection<DisasmInstruction> ret = null;
-            if (instructions != null && instructions.Length > 0)
+            ICollection<DisasmInstruction>? ret = null;
+            if (instructions.Length > 0)
             {
                 DisassemblyBlock block = new DisassemblyBlock(instructions);
                 lock (_disassemlyCache)
@@ -169,7 +168,7 @@ namespace Microsoft.MIDebugEngine
         /// <returns> address - n on failure, else the address of an instruction n back from the target address</returns>
         public async Task<ulong> SeekBack(ulong address, int nInstructions)
         {
-            ICollection<DisasmInstruction> ret = null;
+            ICollection<DisasmInstruction>? ret = null;
             ulong defaultAddr = address >= (ulong)nInstructions ? address - (ulong)nInstructions : 0;
 
             lock (_disassemlyCache)
@@ -193,19 +192,23 @@ namespace Microsoft.MIDebugEngine
                 // check the cache with the adjusted range
                 var kv = _disassemlyCache.FirstOrDefault((p) => p.Value.TryFetch(startAddress, address < endAddress ? address : endAddress, out ret));
             }
-            if (ret == null)
+            if (ret is null)
             {
-                DisasmInstruction[] instructions = await Disassemble(_process, startAddress, endAddress);
-                if (instructions == null)
+                DisasmInstruction[]? instructions = await Disassemble(_process, startAddress, endAddress);
+                if (instructions is null)
                 {
                     return defaultAddr;    // unknown error condition
                 }
 
                 // when seeking back require that the disassembly contain an instruction at the target address (x86 has varying length instructions) 
                 instructions = await VerifyDisassembly(instructions, startAddress, endAddress, address);
+                if (instructions is null)
+                {
+                    return defaultAddr;
+                }
 
                 ret = UpdateCache(address, -nInstructions, instructions);
-                if (ret == null)
+                if (ret is null)
                 {
                     return defaultAddr;
                 }
@@ -230,9 +233,9 @@ namespace Microsoft.MIDebugEngine
         /// <param name="address">Beginning address of an instruction to use as a starting point for disassembly.</param>
         /// <param name="nInstructions">Number of instructions to disassemble.</param>
         /// <returns></returns>
-        public async Task<ICollection<DisasmInstruction>> FetchInstructions(ulong address, int nInstructions)
+        public async Task<ICollection<DisasmInstruction>?> FetchInstructions(ulong address, int nInstructions)
         {
-            ICollection<DisasmInstruction> ret = null;
+            ICollection<DisasmInstruction>? ret = null;
 
             lock (_disassemlyCache)
             {
@@ -268,14 +271,14 @@ namespace Microsoft.MIDebugEngine
                     return ret;
             }
 
-            DisasmInstruction[] instructions = await Disassemble(_process, startAddress, endAddress);
+            DisasmInstruction[]? instructions = await Disassemble(_process, startAddress, endAddress);
 
             instructions = await VerifyDisassembly(instructions, startAddress, endAddress, address);
 
-            return UpdateCache(address, nInstructions, instructions);
+            return instructions is null ? null : UpdateCache(address, nInstructions, instructions);
         }
 
-        private async Task<DisasmInstruction[]> VerifyDisassembly(DisasmInstruction[] instructions, ulong startAddress, ulong endAddress, ulong targetAddress)
+        private async Task<DisasmInstruction[]?> VerifyDisassembly(DisasmInstruction[]? instructions, ulong startAddress, ulong endAddress, ulong targetAddress)
         {
             if (startAddress > targetAddress || targetAddress > endAddress)
             {
@@ -283,13 +286,13 @@ namespace Microsoft.MIDebugEngine
             }
             var originalInstructions = instructions;
             int count = 0;
-            while (instructions != null && (instructions.Length == 0 || Array.Find(instructions, (i)=>i.Addr == targetAddress) == null) && count < _process.MaxInstructionSize)
+            while (instructions is not null && (instructions.Length == 0 || Array.Find(instructions, (i) => i.Addr == targetAddress) is null) && count < _process.MaxInstructionSize)
             {
                 count++;
                 startAddress--;         // back up one byte
                 instructions = await Disassemble(_process, startAddress, endAddress); // try again
             }
-            return instructions == null ? originalInstructions : instructions;
+            return instructions is null ? originalInstructions : instructions;
         }
 
         private void DeleteRangeFromCache(DisassemblyBlock block)
@@ -306,7 +309,7 @@ namespace Microsoft.MIDebugEngine
         }
 
         // this is inefficient so we try and grab everything in one gulp
-        internal static async Task<DisasmInstruction[]> Disassemble(DebuggedProcess process, ulong startAddr, ulong endAddr)
+        internal static async Task<DisasmInstruction[]?> Disassemble(DebuggedProcess process, ulong startAddr, ulong endAddr)
         {
             string cmd;
             string startAddrStr;
@@ -332,7 +335,7 @@ namespace Microsoft.MIDebugEngine
         }
 
         // this is inefficient so we try and grab everything in one gulp
-        internal async Task<IEnumerable<DisasmInstruction>> Disassemble(DebuggedProcess process, string file, uint line, uint dwInstructions)
+        internal async Task<IEnumerable<DisasmInstruction>?> Disassemble(DebuggedProcess process, string file, uint line, uint dwInstructions)
         {
             if (file.IndexOf(' ') >= 0) // only needs escaping if filename contains a space
             {

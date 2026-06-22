@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Text;
 using Microsoft.VisualStudio.Debugger.Interop;
 using MICore;
-using System.Diagnostics;
 using System.Globalization;
 
 // This file contains the various event objects that are sent to the debugger from the sample engine via IDebugEventCallback2::Event.
@@ -81,7 +80,7 @@ namespace Microsoft.MIDebugEngine
         public static void Send(AD7Engine engine)
         {
             AD7EngineCreateEvent eventObject = new AD7EngineCreateEvent(engine);
-            engine.Callback.Send(eventObject, IID, null, null);
+            engine.Callback.Send(eventObject, IID, null!, null!);
         }
 
         int IDebugEngineCreateEvent2.GetEngine(out IDebugEngine2 engine)
@@ -100,7 +99,7 @@ namespace Microsoft.MIDebugEngine
         internal static void Send(AD7Engine engine)
         {
             AD7ProgramCreateEvent eventObject = new AD7ProgramCreateEvent();
-            engine.Callback.Send(eventObject, IID, engine, null);
+            engine.Callback.Send(eventObject, IID, engine, null!);
         }
     }
 
@@ -236,7 +235,7 @@ namespace Microsoft.MIDebugEngine
                 }
             }
 
-            pbstrHelpFileName = null;
+            pbstrHelpFileName = null!; // nullable annotations don't work for COM methods
             pdwHelpId = 0;
 
             return Constants.S_OK;
@@ -372,10 +371,10 @@ namespace Microsoft.MIDebugEngine
 
     internal sealed class AD7ExpressionCompleteEvent : AD7AsynchronousEvent, IDebugExpressionEvaluationCompleteEvent2
     {
-        private AD7Engine _engine;
+        private readonly AD7Engine _engine;
         public const string IID = "C0E13A85-238A-4800-8315-D947C960A843";
 
-        public AD7ExpressionCompleteEvent(AD7Engine engine, IVariableInformation var, IDebugProperty2 prop = null)
+        public AD7ExpressionCompleteEvent(AD7Engine engine, IVariableInformation var, IDebugProperty2? prop = null)
         {
             _engine = engine;
             _var = var;
@@ -390,12 +389,12 @@ namespace Microsoft.MIDebugEngine
 
         public int GetResult(out IDebugProperty2 prop)
         {
-            prop = _prop != null ? _prop : new AD7Property(_engine, _var);
+            prop = _prop is not null ? _prop : new AD7Property(_engine, _var);
             return Constants.S_OK;
         }
 
-        private IVariableInformation _var;
-        private IDebugProperty2 _prop;
+        private readonly IVariableInformation _var;
+        private readonly IDebugProperty2? _prop;
     }
 
     // This interface tells the session debug manager (SDM) that an exception has occurred in the debuggee.
@@ -407,7 +406,7 @@ namespace Microsoft.MIDebugEngine
         {
             _name = name;
             _code = code;
-            _description = string.IsNullOrEmpty(description) ? name : description;
+            _description = IsNullOrEmpty(description) ? name : description;
             _category = exceptionCategory ?? EngineConstants.EngineId;
 
             switch (state)
@@ -586,7 +585,7 @@ namespace Microsoft.MIDebugEngine
         internal static void Send(AD7Engine engine, string name, uint pid)
         {
             AD7ProcessInfoUpdatedEvent eventObject = new AD7ProcessInfoUpdatedEvent(name, pid);
-            engine.Callback.Send(eventObject, IID, engine, null);
+            engine.Callback.Send(eventObject, IID, engine, null!);
         }
     }
 

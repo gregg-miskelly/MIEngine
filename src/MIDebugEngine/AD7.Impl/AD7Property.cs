@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Microsoft.MIDebugEngine.Natvis;
@@ -20,8 +19,8 @@ namespace Microsoft.MIDebugEngine
     internal class AD7Property : IDebugProperty3, IDebugProperty160, IDebugMIEngineProperty
     {
         private static uint s_maxChars = 1000000;
-        private byte[] _bytes;
-        private VisualizerId[] _uiVisualizers = null;
+        private byte[]? _bytes;
+        private VisualizerId[]? _uiVisualizers;
 
         private AD7Engine _engine;
         private IVariableInformation _variableInformation;
@@ -40,7 +39,7 @@ namespace Microsoft.MIDebugEngine
             IVariableInformation variable = _variableInformation;
             if ((dwFields & (enum_DEBUGPROP_INFO_FLAGS)enum_DEBUGPROP_INFO_FLAGS100.DEBUGPROP100_INFO_NOSIDEEFFECTS) != 0)
             {
-                if ((variable = _engine.DebuggedProcess.Natvis.Cache.VisualizeOnRefresh(_variableInformation)) == null)
+                if ((variable = _engine.DebuggedProcess.Natvis.Cache.VisualizeOnRefresh(_variableInformation)!) is null)
                 {
                     return AD7ErrorProperty.ConstructErrorPropertyInfo(dwFields, _variableInformation.Name, ResourceStrings.NoSideEffectsVisualizerMessage, this, _variableInformation.FullName());
                 }
@@ -52,7 +51,7 @@ namespace Microsoft.MIDebugEngine
             if ((dwFields & enum_DEBUGPROP_INFO_FLAGS.DEBUGPROP_INFO_FULLNAME) != 0)
             {
                 propertyInfo.bstrFullName = fullName;
-                if (propertyInfo.bstrFullName != null)
+                if (propertyInfo.bstrFullName is not null)
                 {
                     propertyInfo.dwFields |= enum_DEBUGPROP_INFO_FLAGS.DEBUGPROP_INFO_FULLNAME;
                 }
@@ -64,7 +63,7 @@ namespace Microsoft.MIDebugEngine
                 propertyInfo.dwFields |= enum_DEBUGPROP_INFO_FLAGS.DEBUGPROP_INFO_NAME;
             }
 
-            if ((dwFields & enum_DEBUGPROP_INFO_FLAGS.DEBUGPROP_INFO_TYPE) != 0 && !string.IsNullOrEmpty(variable.TypeName))
+            if ((dwFields & enum_DEBUGPROP_INFO_FLAGS.DEBUGPROP_INFO_TYPE) != 0 && !IsNullOrEmpty(variable.TypeName))
             {
                 propertyInfo.bstrType = variable.TypeName;
                 propertyInfo.dwFields |= enum_DEBUGPROP_INFO_FLAGS.DEBUGPROP_INFO_TYPE;
@@ -89,7 +88,7 @@ namespace Microsoft.MIDebugEngine
                 } else
                 {
                     propertyInfo.dwAttrib |= enum_DBG_ATTRIB_FLAGS.DBG_ATTRIB_DATA;
-                    if (!string.IsNullOrEmpty(fullName))
+                    if (!IsNullOrEmpty(fullName))
                     {
                         lock (_engine.DebuggedProcess.DataBreakpointVariables)
                         {
@@ -117,7 +116,7 @@ namespace Microsoft.MIDebugEngine
                 }
                 propertyInfo.dwAttrib |= variable.Access;
 
-                if (_uiVisualizers != null && _uiVisualizers.Length > 0)
+                if (_uiVisualizers is not null && _uiVisualizers.Length > 0)
                 {
                     propertyInfo.dwAttrib |= enum_DBG_ATTRIB_FLAGS.DBG_ATTRIB_VALUE_CUSTOM_VIEWER;
                     if (_uiVisualizers.Length > 1)
@@ -144,7 +143,7 @@ namespace Microsoft.MIDebugEngine
         // Enumerates the children of a property. This provides support for dereferencing pointers, displaying members of an array, or fields of a class or struct.
         public int EnumChildren(enum_DEBUGPROP_INFO_FLAGS dwFields, uint dwRadix, ref Guid guidFilter, enum_DBG_ATTRIB_FLAGS dwAttribFilter, string pszNameFilter, uint dwTimeout, out IEnumDebugPropertyInfo2 ppEnum)
         {
-            ppEnum = null;
+            ppEnum = null!; // nullable annotations don't work for COM methods
 
             _variableInformation.PropertyInfoFlags = dwFields;
             _variableInformation.EnsureChildren();
@@ -158,8 +157,8 @@ namespace Microsoft.MIDebugEngine
 
                     // Count number of children that fit filter (results saved in "fitsFilter")
                     int propertyCount = children.Length;
-                    bool[] fitsFilter = null;
-                    if (!string.IsNullOrEmpty(pszNameFilter))
+                    bool[]? fitsFilter = null;
+                    if (!IsNullOrEmpty(pszNameFilter))
                     {
                         fitsFilter = new bool[children.Length];
                         for (int i = 0; i < children.Length; i++)
@@ -176,7 +175,7 @@ namespace Microsoft.MIDebugEngine
                     DEBUG_PROPERTY_INFO[] properties = new DEBUG_PROPERTY_INFO[propertyCount];
                     for (int i = 0, j = 0; i < children.Length; i++)
                     {
-                        if (fitsFilter == null || fitsFilter[i])
+                        if (fitsFilter is null || fitsFilter[i])
                         {
                             properties[j] = (new AD7Property(_engine, children[i])).ConstructDebugPropertyInfo(dwFields);
                             ++j; // increment j if we fit filter, this allows us to traverse "properties" array properly.
@@ -220,12 +219,12 @@ namespace Microsoft.MIDebugEngine
         // Returns the memory context for a property value.
         public int GetMemoryContext(out IDebugMemoryContext2 ppMemory)
         {
-            ppMemory = null;
+            ppMemory = null!; // nullable annotations don't work for COM methods
             if (_variableInformation.Error)
                 return AD7_HRESULT.S_GETMEMORYCONTEXT_NO_MEMORY_CONTEXT;
             // try to interpret the result as an address
             string v = _variableInformation.Value;
-            if (string.IsNullOrWhiteSpace(v))
+            if (IsNullOrWhiteSpace(v))
             {
                 return AD7_HRESULT.S_GETMEMORYCONTEXT_NO_MEMORY_CONTEXT;
             }
@@ -298,7 +297,6 @@ namespace Microsoft.MIDebugEngine
         public int GetPropertyInfo(enum_DEBUGPROP_INFO_FLAGS dwFields, uint dwRadix, uint dwTimeout, IDebugReference2[] rgpArgs, uint dwArgCount, DEBUG_PROPERTY_INFO[] pPropertyInfo)
         {
             pPropertyInfo[0] = new DEBUG_PROPERTY_INFO();
-            rgpArgs = null;
             pPropertyInfo[0] = ConstructDebugPropertyInfo(dwFields);
             return Constants.S_OK;
         }
@@ -326,7 +324,7 @@ namespace Microsoft.MIDebugEngine
         // the sample has set the read-only flag on its properties, so this should not be called.
         public int SetValueAsString(string pszValue, uint dwRadix, uint dwTimeout)
         {
-            string error;
+            string? error;
             return SetValueAsStringWithError(pszValue, dwRadix, dwTimeout, out error);
         }
 
@@ -344,27 +342,27 @@ namespace Microsoft.MIDebugEngine
 
         public int GetCustomViewerCount(out uint pcelt)
         {
-            pcelt = this._uiVisualizers == null ? 0 : (uint)this._uiVisualizers.Length;
+            pcelt = _uiVisualizers is null ? 0 : (uint)_uiVisualizers.Length;
             return Constants.S_OK;
         }
 
         public int GetCustomViewerList(uint celtSkip, uint celtRequested, DEBUG_CUSTOM_VIEWER[] rgViewers, out uint pceltFetched)
         {
             pceltFetched = 0;
-            if (this._uiVisualizers == null || (int)celtSkip >= this._uiVisualizers.Length)
+            if (_uiVisualizers is null || (int)celtSkip >= _uiVisualizers.Length)
             {
                 return Constants.S_OK;
             }
 
-            int numleft = this._uiVisualizers.Length - (int)celtSkip;
-            var viewers = this._uiVisualizers.Skip((int)celtSkip).Take(Math.Min((int)celtRequested, numleft));
+            int numleft = _uiVisualizers.Length - (int)celtSkip;
+            var viewers = _uiVisualizers.Skip((int)celtSkip).Take(Math.Min((int)celtRequested, numleft));
 
             int i = 0;
             foreach (var v in viewers)
             {
                 rgViewers[i].bstrMetric = v.Name;
                 rgViewers[i].dwID = (uint)v.Id;
-                rgViewers[i].bstrMenuName = _engine.DebuggedProcess.Natvis.GetUIVisualizerName(v.Name, v.Id);
+                rgViewers[i].bstrMenuName = _engine.DebuggedProcess.Natvis.GetUIVisualizerName(v.Name ?? string.Empty, v.Id);
                 i++;
             }
 
@@ -374,7 +372,7 @@ namespace Microsoft.MIDebugEngine
 
         private void InitializeBytes()
         {
-            if (_bytes != null)
+            if (_bytes is not null)
                 return;
 
             uint fetched = 0;
@@ -449,7 +447,7 @@ namespace Microsoft.MIDebugEngine
             }
             if (!eos)
             {
-                Debug.Assert(fetched < bytes.Length);
+                System.Diagnostics.Debug.Assert(fetched < bytes.Length);
                 bytes[fetched++] = 0;
             }
             if (fetched < bytes.Length)
@@ -466,15 +464,17 @@ namespace Microsoft.MIDebugEngine
         public int GetStringCharLength(out uint pLen)
         {
             InitializeBytes();
-            pLen = (uint)_bytes.Length;
+            byte[] bytes = _bytes ?? Array.Empty<byte>();
+            pLen = (uint)bytes.Length;
             return Constants.S_OK;
         }
         private int GetStringRawBytes(uint buflen, byte[] rgString, out uint pceltFetched)
         {
             InitializeBytes();
-            for (pceltFetched = 0; pceltFetched < Math.Min(_bytes.Length, buflen); ++pceltFetched)
+            byte[] bytes = _bytes ?? Array.Empty<byte>();
+            for (pceltFetched = 0; pceltFetched < Math.Min(bytes.Length, buflen); ++pceltFetched)
             {
-                rgString[pceltFetched] = _bytes[pceltFetched];
+                rgString[pceltFetched] = bytes[pceltFetched];
             }
             return Constants.S_OK;
         }
@@ -482,18 +482,19 @@ namespace Microsoft.MIDebugEngine
         public int GetStringChars(uint buflen, ushort[] rgString, out uint pceltFetched)
         {
             pceltFetched = 0;
-            if (_bytes == null)
+            if (_bytes is null)
             {
                 return Constants.E_FAIL;
             }
-            for (pceltFetched = 0; pceltFetched < Math.Min(_bytes.Length, buflen); ++pceltFetched)
+            byte[] bytes = _bytes;
+            for (pceltFetched = 0; pceltFetched < Math.Min(bytes.Length, buflen); ++pceltFetched)
             {
-                rgString[pceltFetched] = _bytes[pceltFetched];
+                rgString[pceltFetched] = bytes[pceltFetched];
             }
             return Constants.S_OK;
         }
 
-        public int SetValueAsStringWithError(string pszValue, uint dwRadix, uint dwTimeout, out string errorString)
+        public int SetValueAsStringWithError(string pszValue, uint dwRadix, uint dwTimeout, out string? errorString)
         {
             errorString = null;
             try
@@ -510,7 +511,7 @@ namespace Microsoft.MIDebugEngine
             }
             catch (MICore.UnexpectedMIResultException e)
             {
-                if (!string.IsNullOrEmpty(e.MIError))
+                if (!IsNullOrEmpty(e.MIError))
                 {
                     errorString = e.MIError;
                 }
@@ -534,9 +535,9 @@ namespace Microsoft.MIDebugEngine
             }
             catch (Exception e)
             {
-                pbstrAddress = null;
+                pbstrAddress = null!; // nullable annotations don't work for COM methods
                 pSize = 0;
-                pbstrDisplayName = null;
+                pbstrDisplayName = null!; // nullable annotations don't work for COM methods
                 pbstrError = e.Message;
             }
             return Constants.E_FAIL;
@@ -570,7 +571,7 @@ namespace Microsoft.MIDebugEngine
 
         public int EnumChildren(enum_DEBUGPROP_INFO_FLAGS dwFields, uint dwRadix, ref Guid guidFilter, enum_DBG_ATTRIB_FLAGS dwAttribFilter, string pszNameFilter, uint dwTimeout, out IEnumDebugPropertyInfo2 ppEnum)
         {
-            ppEnum = null;
+            ppEnum = null!; // nullable annotations don't work for COM methods
             return Constants.S_FALSE;
         }
 
@@ -602,7 +603,7 @@ namespace Microsoft.MIDebugEngine
 
         public int GetMemoryContext(out IDebugMemoryContext2 ppMemory)
         {
-            ppMemory = null;
+            ppMemory = null!; // nullable annotations don't work for COM methods
             return AD7_HRESULT.S_GETMEMORYCONTEXT_NO_MEMORY_CONTEXT;
         }
 
@@ -611,7 +612,7 @@ namespace Microsoft.MIDebugEngine
             throw new NotImplementedException();
         }
 
-        public static DEBUG_PROPERTY_INFO ConstructErrorPropertyInfo(enum_DEBUGPROP_INFO_FLAGS dwFields, string name, string error, IDebugProperty2 prop, string varFullName)
+        public static DEBUG_PROPERTY_INFO ConstructErrorPropertyInfo(enum_DEBUGPROP_INFO_FLAGS dwFields, string name, string error, IDebugProperty2 prop, string? varFullName)
         {
             DEBUG_PROPERTY_INFO property = new DEBUG_PROPERTY_INFO();
             // Add the parent fullname to fullname so when it is refreshed, it will evaluate.
@@ -645,7 +646,6 @@ namespace Microsoft.MIDebugEngine
         public int GetPropertyInfo(enum_DEBUGPROP_INFO_FLAGS dwFields, uint dwRadix, uint dwTimeout, IDebugReference2[] rgpArgs, uint dwArgCount, DEBUG_PROPERTY_INFO[] pPropertyInfo)
         {
             pPropertyInfo[0] = ConstructErrorPropertyInfo(dwFields, _name, _message, this, null);
-            rgpArgs = null;
             return Constants.S_OK;
         }
 
@@ -681,7 +681,7 @@ namespace Microsoft.MIDebugEngine
             return Constants.E_FAIL;
         }
 
-        public int SetValueAsStringWithError(string pszValue, uint dwRadix, uint dwTimeout, out string errorString)
+        public int SetValueAsStringWithError(string pszValue, uint dwRadix, uint dwTimeout, out string? errorString)
         {
             errorString = null;
             return Constants.E_FAIL;

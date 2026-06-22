@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
@@ -7,7 +7,6 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using MICore;
-using System.Diagnostics;
 using Microsoft.DebugEngineHost;
 using System.Globalization;
 
@@ -38,14 +37,14 @@ namespace Microsoft.MIDebugEngine
         }
         private DebuggedProcess _process;
         private LaunchOptions _launchOptions;
-        private string _mainBreak;
+        private string? _mainBreak;
 
         private class ThreadProgress
         {
             public State State;
             public int Newpid;
             public int Newtid;
-            public string Exe;
+            public string? Exe;
         }
         private Dictionary<int, ThreadProgress> _threadStates;
 
@@ -65,7 +64,7 @@ namespace Microsoft.MIDebugEngine
                 if (inf != 0)
                 {
                     await _process.ConsoleCmdAsync("inferior " + inf.ToString(CultureInfo.InvariantCulture), allowWhileRunning: false);
-                    if (!string.IsNullOrEmpty(_mainBreak))
+                    if (!IsNullOrEmpty(_mainBreak))
                     {
                         await _process.MICommandFactory.BreakDelete(_mainBreak);
                         _mainBreak = null;
@@ -113,10 +112,21 @@ namespace Microsoft.MIDebugEngine
             string engineName;
             Guid engineGuid;
             _process.Engine.GetEngineInfo(out engineName, out engineGuid);
+            if (_launchOptions.BaseOptions is null)
+            {
+                throw new InvalidOperationException(nameof(_launchOptions.BaseOptions));
+            }
+
+            string? exePath = state.Exe ?? _launchOptions.ExePath;
+            if (exePath is null)
+            {
+                throw new InvalidOperationException(nameof(_launchOptions.ExePath));
+            }
+
             _launchOptions.BaseOptions.ProcessId = state.Newpid;
             _launchOptions.BaseOptions.ProcessIdSpecified = true;
-            _launchOptions.BaseOptions.ExePath = state.Exe ?? _launchOptions.ExePath;
-            HostDebugger.StartDebugChildProcess(_launchOptions.BaseOptions.ExePath, _launchOptions.GetOptionsString(), engineGuid);
+            _launchOptions.BaseOptions.ExePath = exePath;
+            HostDebugger.StartDebugChildProcess(exePath, _launchOptions.GetOptionsString(), engineGuid);
             await _process.MICommandFactory.ExecContinue();     // continue the parent
             return true;   // parent is running
         }
@@ -167,12 +177,13 @@ namespace Microsoft.MIDebugEngine
             }
         }
 
-        private ThreadProgress StateFromTid(int tid)
+        private ThreadProgress? StateFromTid(int tid)
         {
-            if (_threadStates.ContainsKey(tid))
+            if (_threadStates.TryGetValue(tid, out ThreadProgress? state))
             {
-                return _threadStates[tid];
+                return state;
             }
+
             foreach (var p in _threadStates)
             {
                 if (p.Value.Newtid == tid)
@@ -185,8 +196,8 @@ namespace Microsoft.MIDebugEngine
 
         public async Task<bool> Stopped(Results results, int tid)
         {
-            string reason = results.TryFindString("reason");
-            ThreadProgress s = StateFromTid(tid);
+            string? reason = results.TryFindString("reason");
+            ThreadProgress? s = StateFromTid(tid);
 
             if (reason == "fork")
             {
@@ -205,12 +216,17 @@ namespace Microsoft.MIDebugEngine
                 _threadStates[tid] = s;
                 await _process.MICommandFactory.SetOption("schedule-multiple", "on");
                 await _process.MICommandFactory.Catch("exec", onlyOnce: true);
-                var thread = await _process.ThreadCache.GetThread(tid);
+                DebuggedThread? thread = await _process.ThreadCache.GetThread(tid);
+                if (thread is null)
+                {
+                    throw new InvalidOperationException("Missing thread.");
+                }
+
                 await _process.Continue(thread);
                 return true;
             }
 
-            if (s == null)
+            if (s is null)
             {
                 return false;   // no activity being tracked on this thread
             }

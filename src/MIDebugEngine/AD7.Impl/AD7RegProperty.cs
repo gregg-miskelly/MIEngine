@@ -1,11 +1,10 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
 using System.Text;
 using Microsoft.VisualStudio.Debugger.Interop;
-using System.Diagnostics;
 
 namespace Microsoft.MIDebugEngine
 {
@@ -100,7 +99,7 @@ namespace Microsoft.MIDebugEngine
 
         public int GetMemoryContext(out IDebugMemoryContext2 ppMemory)
         {
-            ppMemory = null;
+            ppMemory = null!; // nullable annotations don't work for COM methods
 
             return AD7_HRESULT.S_GETMEMORYCONTEXT_NO_MEMORY_CONTEXT;
         }
@@ -113,7 +112,7 @@ namespace Microsoft.MIDebugEngine
         public int GetPropertyInfo(enum_DEBUGPROP_INFO_FLAGS dwFields, uint dwRadix, uint dwTimeout, IDebugReference2[] rgpArgs, uint dwArgCount, DEBUG_PROPERTY_INFO[] pPropertyInfo)
         {
             pPropertyInfo[0] = PropertyInfo;
-            rgpArgs = null;
+            rgpArgs = null!;
 
             return Constants.S_OK;
         }

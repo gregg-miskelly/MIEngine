@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
+// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using System.Diagnostics;
 using MICore;
 
 namespace Microsoft.MIDebugEngine
@@ -71,7 +70,7 @@ namespace Microsoft.MIDebugEngine
                     return _mapFileToLinenums[fileKey];
                 }
             }
-            SourceLineMap linesMap = null;
+            SourceLineMap? linesMap = null;
             linesMap = await LinesForFile(fileKey);
             lock (_mapFileToLinenums)
             {
@@ -90,7 +89,7 @@ namespace Microsoft.MIDebugEngine
                 return _mapFileToLinenums[fileKey];
             }
         }
-        private async Task<SourceLineMap> LinesForFile(string file)
+        private async Task<SourceLineMap?> LinesForFile(string file)
         {
             string cmd = "-symbol-list-lines " + _process.EnsureProperPathSeparators(file);
             Results results = await _process.CmdAsync(cmd, ResultClass.None);

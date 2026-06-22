@@ -2,7 +2,6 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using MICore;
@@ -70,7 +69,7 @@ namespace Microsoft.MIDebugEngine
                     info.dwValidFields |= enum_MODULE_INFO_FIELDS.MIF_LOADORDER;
                 }
                 if (this.Process.LaunchOptions is LocalLaunchOptions localLaunchOptions &&
-                    string.IsNullOrWhiteSpace(localLaunchOptions.MIDebuggerServerAddress) && string.IsNullOrWhiteSpace(localLaunchOptions.DebugServer) &&
+                    IsNullOrWhiteSpace(localLaunchOptions.MIDebuggerServerAddress) && IsNullOrWhiteSpace(localLaunchOptions.DebugServer) &&
                     (dwFields & enum_MODULE_INFO_FIELDS.MIF_TIMESTAMP) != 0 &&
                     this.DebuggedModule.Name != null)
                 {
@@ -132,7 +131,7 @@ namespace Microsoft.MIDebugEngine
 
         int IDebugModule2.ReloadSymbols_Deprecated(string urlToSymbols, out string debugMessage)
         {
-            debugMessage = null;
+            debugMessage = null!; // nullable annotations don't work for COM methods
             Debug.Fail("This function is not called by the debugger.");
             return Constants.E_NOTIMPL;
         }
