@@ -54,7 +54,8 @@ namespace Microsoft.MIDebugEngine
         private string _entryPointBreakpoint = string.Empty;
         private bool? _simpleValuesExcludesRefTypes = null;
 
-        public DebuggedProcess(bool bLaunched, LaunchOptions launchOptions, ISampleEngineCallback callback, WorkerThread worker, BreakpointManager bpman, AD7Engine engine, HostConfigurationStore configStore, HostWaitLoop waitLoop = null) : base(launchOptions, engine.Logger)
+        public DebuggedProcess(bool bLaunched, LaunchOptions launchOptions, ISampleEngineCallback callback, WorkerThread worker, BreakpointManager bpman, AD7Engine engine, HostConfigurationStore configStore, HostWaitLoop waitLoop = null) :
+            base(launchOptions, engine.Logger)
         {
             uint processExitCode = 0;
             _pendingMessages = new StringBuilder(400);
@@ -64,7 +65,6 @@ namespace Microsoft.MIDebugEngine
             _libraryLoaded = new List<string>();
             _loadOrder = 0;
             _deleteEntryPointBreakpoint = false;
-            MICommandFactory = MICommandFactory.GetInstance(launchOptions.DebuggerMIMode, this);
             _waitDialog = (MICommandFactory.SupportsStopOnDynamicLibLoad() && launchOptions.WaitDynamicLibLoad) ? new HostWaitDialog(ResourceStrings.LoadingSymbolMessage, ResourceStrings.LoadingSymbolCaption) : null;
             Natvis = new Natvis.Natvis(this, launchOptions.ShowDisplayString, configStore);
 
