@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading;
-using System.Diagnostics;
 using System.IO;
 using Microsoft.DebugEngineHost;
 
@@ -20,12 +19,12 @@ namespace MICore
 
     public class MockTransport : ITransport
     {
-        private ITransportCallback _callback;
-        private Thread _thread;
-        private string _nextCommand;
+        private ITransportCallback _callback = null!;
+        private Thread _thread = null!;
+        private string? _nextCommand;
         private bool _bQuit;
-        private TextReader _reader;
-        private AutoResetEvent _commandEvent;
+        private TextReader _reader = null!;
+        private AutoResetEvent _commandEvent = null!;
         private string _filename;
         private int _lineNumber;
 
@@ -34,7 +33,7 @@ namespace MICore
             _filename = logfilename;
         }
 
-        public void Init(ITransportCallback transportCallback, LaunchOptions options, Logger logger, HostWaitLoop waitLoop = null)
+        public void Init(ITransportCallback transportCallback, LaunchOptions options, Logger logger, HostWaitLoop? waitLoop = null)
         {
             _bQuit = false;
             _callback = transportCallback;
@@ -78,14 +77,14 @@ namespace MICore
 
             while (!_bQuit)
             {
-                string line = _reader.ReadLine();
+                string? line = _reader.ReadLine();
                 if (line == null)
                 {
                     break;
                 }
                 line = line.TrimEnd();
                 _lineNumber++;
-                Debug.WriteLine("#{0}:{1}", _lineNumber, line);
+                Debug.WriteLine($"#{_lineNumber}:{line}");
 
                 if (line[0] == '-')
                 {
@@ -104,7 +103,7 @@ namespace MICore
             }
         }
 
-        public int ExecuteSyncCommand(string commandDescription, string commandText, int timeout, out string output, out string error)
+        public int ExecuteSyncCommand(string commandDescription, string commandText, int timeout, out string? output, out string? error)
         {
             throw new NotImplementedException();
         }

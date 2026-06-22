@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading.Tasks;
 using System.IO;
 using System.Text;
@@ -52,7 +51,7 @@ namespace MICore
         {
             // first aquire an exclusive lock. This is used as we don't want to fight with other commands that also require the current
             // thread to be set to a particular value
-            ExclusiveLockToken lockToken = await _debugger.CommandLock.AquireExclusive();
+            ExclusiveLockToken? lockToken = await _debugger.CommandLock.AquireExclusive();
 
             try
             {
@@ -98,7 +97,7 @@ namespace MICore
         {
             // first aquire an exclusive lock. This is used as we don't want to fight with other commands that also require the current
             // thread to be set to a particular value
-            ExclusiveLockToken lockToken = await _debugger.CommandLock.AquireExclusive();
+            ExclusiveLockToken? lockToken = await _debugger.CommandLock.AquireExclusive();
 
             try
             {
@@ -188,7 +187,7 @@ namespace MICore
             {
                 while (true)
                 {
-                    string resultLine = stringReader.ReadLine();
+                    string? resultLine = stringReader.ReadLine();
                     if (resultLine == null)
                         break;
 
@@ -276,7 +275,7 @@ namespace MICore
             {
                 while (true)
                 {
-                    string resultLine = stringReader.ReadLine();
+                    string? resultLine = stringReader.ReadLine();
                     if (resultLine == null)
                         break;
 
@@ -322,7 +321,7 @@ namespace MICore
             await _debugger.ConsoleCmdAsync(command + name, allowWhileRunning: false);
         }
 
-        public override async Task<string[]> AutoComplete(string command, int threadId, uint frameLevel)
+        public override async Task<string[]?> AutoComplete(string command, int threadId, uint frameLevel)
         {
             string cmd = "-complete";
             string args = $"\"{command}\"";

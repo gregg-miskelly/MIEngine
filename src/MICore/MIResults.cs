@@ -6,10 +6,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using System.Diagnostics;
 using System.Collections;
 using System.Globalization;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.DebugEngineHost;
+using DebuggerDisplayAttribute = global::System.Diagnostics.DebuggerDisplayAttribute;
+using DebuggerTypeProxyAttribute = global::System.Diagnostics.DebuggerTypeProxyAttribute;
+using DebuggerBrowsableAttribute = global::System.Diagnostics.DebuggerBrowsableAttribute;
+using DebuggerBrowsableState = global::System.Diagnostics.DebuggerBrowsableState;
 
 namespace MICore
 {
@@ -39,7 +43,7 @@ namespace MICore
             throw new MIResultFormatException(name, this);
         }
 
-        public virtual bool TryFind(string name, out ResultValue result)
+        public virtual bool TryFind(string name, [NotNullWhen(true)] out ResultValue? result)
         {
             if (Contains(name))
             {
@@ -49,7 +53,7 @@ namespace MICore
             {
                 result = null;
             }
-            return result != null;
+            return result is not null;
         }
 
         public virtual bool Contains(string name)
@@ -100,7 +104,7 @@ namespace MICore
         /// <returns>The value of the property or null if it cannot be found</returns>
         public uint? TryFindUint(string name)
         {
-            ConstValue c;
+            ConstValue? c;
             if (!TryFind(name, out c))
             {
                 return null;
@@ -147,7 +151,7 @@ namespace MICore
         /// <returns>The value of the address or null if it can't be found</returns>
         public ulong? TryFindAddr(string name)
         {
-            ConstValue c;
+            ConstValue? c;
             if (!TryFind(name, out c))
             {
                 return null;
@@ -175,7 +179,7 @@ namespace MICore
 
         public string TryFindString(string name)
         {
-            ConstValue c;
+            ConstValue? c;
             if (!TryFind(name, out c))
             {
                 return string.Empty;
@@ -186,14 +190,14 @@ namespace MICore
         public T Find<T>(string name) where T : ResultValue
         {
             var c = Find(name);
-            if (c is T)
+            if (c is T t)
             {
-                return c as T;
+                return t;
             }
             throw new MIResultFormatException(name, this);
         }
 
-        public bool TryFind<T>(string name, out T result) where T : ResultValue
+        public bool TryFind<T>(string name, [NotNullWhen(true)] out T? result) where T : ResultValue
         {
             if (Contains(name))
             {
@@ -203,12 +207,12 @@ namespace MICore
             {
                 result = null;
             }
-            return result != null;
+            return result is not null;
         }
 
-        public T TryFind<T>(string name) where T : ResultValue
+        public T? TryFind<T>(string name) where T : ResultValue
         {
-            T result;
+            T? result;
             if (!TryFind(name, out result))
             {
                 return null;
@@ -279,7 +283,7 @@ namespace MICore
             {
                 get
                 {
-                    List<NamedResultValue> values = null;
+                    List<NamedResultValue>? values = null;
 
                     if (_value is ValueListValue)
                     {
@@ -307,7 +311,7 @@ namespace MICore
                         });
                     }
 
-                    return values?.ToArray();
+                    return values?.ToArray() ?? Array.Empty<NamedResultValue>();
                 }
             }
         }
@@ -410,7 +414,7 @@ namespace MICore
         /// </summary>
         /// <param name="requiredNames">The list of names that must be added to the TupleValue.</param>
         /// <param name="optionalNames">The list of names that will be added to the TupleValue if they exist in this TupleValue.</param>
-        public TupleValue Subset(IEnumerable<string> requiredNames, IEnumerable<string> optionalNames = null)
+        public TupleValue Subset(IEnumerable<string> requiredNames, IEnumerable<string>? optionalNames = null)
         {
             List<NamedResultValue> values = new List<NamedResultValue>();
 
@@ -422,11 +426,11 @@ namespace MICore
             }
 
             // Iterate the optional list and add the values of the name exists.
-            if (null != optionalNames)
+            if (optionalNames is not null)
             {
                 foreach (string name in optionalNames)
                 {
-                    ResultValue value;
+                    ResultValue? value;
                     if (this.TryFind(name, out value))
                     {
                         values.Add(new NamedResultValue(name, value));
@@ -566,7 +570,7 @@ namespace MICore
 
         public readonly ResultClass ResultClass;
 
-        public Results(ResultClass resultsClass, List<NamedResultValue> list = null)
+        public Results(ResultClass resultsClass, List<NamedResultValue>? list = null)
             : base(list ?? new List<NamedResultValue>())
         {
             ResultClass = resultsClass;
@@ -678,7 +682,7 @@ namespace MICore
             }
         }
 
-        private string _resultString;
+        private string _resultString = null!;
         private Logger Logger { get; set; }
 
         public MIResults(Logger logger)
@@ -746,7 +750,7 @@ namespace MICore
             {
                 throw new ArgumentNullException(nameof(input));
             }
-            else if (string.IsNullOrEmpty(input))
+            else if (IsNullOrEmpty(input))
             {
                 return string.Empty;
             }
@@ -784,28 +788,24 @@ namespace MICore
         /// <returns></returns>
         private ResultValue ParseValue(Span resultStr, out Span rest)
         {
-            ResultValue value = null;
             rest = Span.Empty;
             if (resultStr.IsEmpty)
             {
-                return null;
+                ParseError("value expected", resultStr);
             }
             switch (_resultString[resultStr.Start])
             {
                 case '\"':
-                    value = ParseCString(resultStr, out rest);
-                    break;
+                    return ParseCString(resultStr, out rest);
                 case '{':
-                    value = ParseTuple(resultStr, out rest);
-                    break;
+                    return ParseTuple(resultStr, out rest);
                 case '[':
-                    value = ParseList(resultStr, out rest);
-                    break;
+                    return ParseList(resultStr, out rest);
                 default:
                     ParseError("unexpected char", resultStr);
                     break;
             }
-            return value;
+            throw new InvalidOperationException();
         }
 
         /// <summary>
@@ -818,28 +818,24 @@ namespace MICore
         /// <returns></returns>
         private ResultValue ParseResultValue(Span resultStr, out Span rest)
         {
-            ResultValue value = null;
             rest = Span.Empty;
             if (resultStr.IsEmpty)
             {
-                return null;
+                ParseError("result value expected", resultStr);
             }
             switch (_resultString[resultStr.Start])
             {
                 case '\"':
-                    value = ParseCString(resultStr, out rest);
-                    break;
+                    return ParseCString(resultStr, out rest);
                 case '{':
-                    value = ParseResultTuple(resultStr, out rest);
-                    break;
+                    return ParseResultTuple(resultStr, out rest);
                 case '[':
-                    value = ParseList(resultStr, out rest);
-                    break;
+                    return ParseList(resultStr, out rest);
                 default:
                     ParseError("unexpected char", resultStr);
                     break;
             }
-            return value;
+            throw new InvalidOperationException();
         }
 
         /// <summary>
@@ -866,10 +862,6 @@ namespace MICore
             }
             string name = resultStr.Prefix(equals).Extract(_resultString);
             ResultValue value = ParseResultValue(resultStr.Advance(equals + 1), out rest);
-            if (value == null)
-            {
-                return null;
-            }
             return new NamedResultValue(name, value);
         }
 
@@ -1020,21 +1012,11 @@ namespace MICore
             }
             input = input.AdvanceTo(i);
             var item = ParseResult(input, out rest);
-            if (item == null)
-            {
-                ParseError("Result expected", input);
-                return null;
-            }
             list.Add(item);
             input = rest;
             while (!input.IsEmpty && _resultString[input.Start] == ',')
             {
                 item = ParseResult(input.Advance(1), out rest);
-                if (item == null)
-                {
-                    ParseError("Result expected", input);
-                    return null;
-                }
                 list.Add(item);
                 input = rest;
             }
@@ -1078,10 +1060,6 @@ namespace MICore
         private ResultValue ParseResultTuple(Span input, out Span rest)
         {
             var list = ParseResultList('{', '}', input, out rest);
-            if (list == null)
-            {
-                return null;
-            }
             var tlist = new List<ResultValue>();
             TupleValue v;
             while (rest.StartsWith(_resultString, ",{"))
@@ -1106,10 +1084,6 @@ namespace MICore
         private TupleValue ParseTuple(Span input, out Span rest)
         {
             var list = ParseResultList('{', '}', input, out rest);
-            if (list == null)
-            {
-                return null;
-            }
             return new TupleValue(list);
         }
 
@@ -1153,21 +1127,11 @@ namespace MICore
             }
             input = input.Advance(1);
             var item = ParseValue(input, out rest);
-            if (item == null)
-            {
-                ParseError("Value expected", input);
-                return null;
-            }
             list.Add(item);
             input = rest;
             while (!input.IsEmpty && _resultString[input.Start] == ',')
             {
                 item = ParseValue(input.Advance(1), out rest);
-                if (item == null)
-                {
-                    ParseError("Value expected", input);
-                    return null;
-                }
                 list.Add(item);
                 input = rest;
             }
@@ -1188,13 +1152,10 @@ namespace MICore
         private ResultListValue ParseResultList(Span input, out Span rest)
         {
             var list = ParseResultList('[', ']', input, out rest);
-            if (list == null)
-            {
-                return null;
-            }
             return new ResultListValue(list);
         }
 
+        [DoesNotReturn]
         private void ParseError(string message, Span input)
         {
             string result = CreateErrorMessageFromSpan(input);
@@ -1202,6 +1163,7 @@ namespace MICore
 
             Logger?.WriteLine(LogLevel.Error, String.Format(CultureInfo.CurrentCulture, "MI parsing error: {0}: \"{1}\"", message, result));
 
+            throw new InvalidOperationException(String.Format(CultureInfo.CurrentCulture, "MI parsing error: {0}: \"{1}\"", message, result));
         }
 
         // The amount of characters to send to the UI upon an error.

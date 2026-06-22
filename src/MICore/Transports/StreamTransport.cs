@@ -4,7 +4,6 @@
 using Microsoft.DebugEngineHost;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -15,16 +14,16 @@ namespace MICore
 {
     public abstract class StreamTransport : ITransport
     {
-        private ITransportCallback _callback;
-        private Thread _thread;
+        private ITransportCallback _callback = null!;
+        private Thread _thread = null!;
         private bool _bQuit;
         private CancellationTokenSource _streamReadCancellationTokenSource = new CancellationTokenSource();
-        protected StreamReader _reader;
-        protected StreamWriter _writer;
+        protected StreamReader _reader = null!;
+        protected StreamWriter? _writer;
         private bool _filterStdout;
         private Object _locker = new object();
 
-        protected Logger Logger
+        protected Logger? Logger
         {
             get; private set;
         }
@@ -40,7 +39,7 @@ namespace MICore
         public abstract void InitStreams(LaunchOptions options, out StreamReader reader, out StreamWriter writer);
         protected virtual string GetThreadName() { return "MI.StreamTransport"; }
 
-        public virtual void Init(ITransportCallback transportCallback, LaunchOptions options, Logger logger, HostWaitLoop waitLoop = null)
+        public virtual void Init(ITransportCallback transportCallback, LaunchOptions options, Logger logger, HostWaitLoop? waitLoop = null)
         {
             Logger = logger;
             _callback = transportCallback;
@@ -55,7 +54,7 @@ namespace MICore
             _thread.Start();
         }
 
-        protected virtual string FilterLine(string line)
+        protected virtual string? FilterLine(string line)
         {
             return line;
         }
@@ -66,7 +65,7 @@ namespace MICore
             {
                 while (!_bQuit)
                 {
-                    string line = GetLine();
+                    string? line = GetLine();
                     if (line == null)
                         break;
 
@@ -80,7 +79,7 @@ namespace MICore
                         {
                             line = FilterLine(line);
                         }
-                        if (!String.IsNullOrWhiteSpace(line) && !line.StartsWith("-", StringComparison.Ordinal))
+                        if (!IsNullOrWhiteSpace(line) && !line.StartsWith("-", StringComparison.Ordinal))
                         {
                             _callback.OnStdOutLine(line);
                         }
@@ -110,7 +109,7 @@ namespace MICore
 
                     try
                     {
-                        _writer.Dispose();
+                        _writer?.Dispose();
                         _writer = null;
                     }
                     catch
@@ -142,7 +141,7 @@ namespace MICore
         }
         protected void Echo(string cmd)
         {
-            if (!String.IsNullOrWhiteSpace(cmd))
+            if (!IsNullOrWhiteSpace(cmd))
             {
                 Logger?.WriteLine(LogLevel.Verbose, "<-" + cmd);
                 Logger?.Flush();
@@ -155,16 +154,16 @@ namespace MICore
             }
         }
 
-        private string GetLine()
+        private string? GetLine()
         {
             return GetLineFromStream(_reader, _streamReadCancellationTokenSource.Token);
         }
 
-        protected string GetLineFromStream(StreamReader reader, CancellationToken token)
+        protected string? GetLineFromStream(StreamReader reader, CancellationToken token)
         {
             try
             {
-                Task<string> task = reader.ReadLineAsync();
+                Task<string?> task = reader.ReadLineAsync();
                 task.Wait(token);
                 return task.Result;
             }
@@ -240,7 +239,7 @@ namespace MICore
             reader?.Dispose();
         }
 
-        public abstract int ExecuteSyncCommand(string commandDescription, string commandText, int timeout, out string output, out string error);
+        public abstract int ExecuteSyncCommand(string commandDescription, string commandText, int timeout, out string? output, out string? error);
         public abstract bool CanExecuteCommand();
     }
 }

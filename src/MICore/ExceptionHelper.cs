@@ -4,7 +4,6 @@
 using Microsoft.DebugEngineHost;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Text;
@@ -33,7 +32,7 @@ namespace MICore
                 HostTelemetry.ReportCurrentException(currentException, "Microsoft.MIDebugEngine");
 
                 logger?.WriteLine(LogLevel.Error, "EXCEPTION: ", currentException.GetType());
-                logger?.WriteTextBlock(LogLevel.Error, "EXCEPTION: ", currentException.StackTrace);
+                logger?.WriteTextBlock(LogLevel.Error, "EXCEPTION: ", currentException.StackTrace ?? string.Empty);
             }
             catch
             {

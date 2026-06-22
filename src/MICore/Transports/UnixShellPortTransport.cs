@@ -17,13 +17,13 @@ namespace MICore
     public class UnixShellPortTransport : ITransport, IDebugUnixShellCommandCallback
     {
         private readonly object _closeLock = new object();
-        private ITransportCallback _callback;
-        private Logger _logger;
-        private string _startRemoteDebuggerCommand;
-        private IDebugUnixShellAsyncCommand _asyncCommand;
+        private ITransportCallback _callback = null!;
+        private Logger _logger = null!;
+        private string _startRemoteDebuggerCommand = null!;
+        private IDebugUnixShellAsyncCommand _asyncCommand = null!;
         private bool _bQuit;
         private bool _debuggerLaunched = false;
-        private UnixShellPortLaunchOptions _launchOptions;
+        private UnixShellPortLaunchOptions _launchOptions = null!;
 
         private const string ErrorPrefix = "Error:";
 
@@ -49,7 +49,7 @@ namespace MICore
         {
         }
 
-        public void Init(ITransportCallback transportCallback, LaunchOptions options, Logger logger, HostWaitLoop waitLoop = null)
+        public void Init(ITransportCallback transportCallback, LaunchOptions options, Logger logger, HostWaitLoop? waitLoop = null)
         {
             _launchOptions = (UnixShellPortLaunchOptions)options;
             _callback = transportCallback;
@@ -99,7 +99,7 @@ namespace MICore
                 _debuggerLaunched = true;
             }
 
-            if (!string.IsNullOrEmpty(line))
+            if (!IsNullOrEmpty(line))
             {
                 _callback.OnStdOutLine(line);
             }
@@ -126,7 +126,7 @@ namespace MICore
             }
         }
 
-        public int ExecuteSyncCommand(string commandDescription, string commandText, int timeout, out string output, out string error)
+        public int ExecuteSyncCommand(string commandDescription, string commandText, int timeout, out string? output, out string? error)
         {
             int errorCode = -1;
             error = null; // In SSH transport, stderr is printed on stdout.
