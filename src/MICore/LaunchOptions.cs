@@ -300,14 +300,14 @@ namespace MICore
 
         public EnvironmentEntry(Json.LaunchOptions.Environment jsonEntry)
         {
-            this.Name = LaunchOptions.RequireAttribute(jsonEntry.Name, nameof(jsonEntry.Name));
-            this.Value = jsonEntry.Value ?? string.Empty;
+            this.Name = LaunchOptions.RequireAttribute(jsonEntry.Name, "environment.name");
+            this.Value = jsonEntry.Value;
         }
 
         public EnvironmentEntry(string name, string? value)
         {
             this.Name = name;
-            this.Value = value ?? string.Empty;
+            this.Value = value;
         }
 
         /// <summary>
@@ -316,9 +316,9 @@ namespace MICore
         public string Name { get; private set; }
 
         /// <summary>
-        /// [Required] Value of the environment variable
+        /// Value of the environment variable, or null to delete it
         /// </summary>
-        public string Value { get; private set; }
+        public string? Value { get; private set; }
     }
 
     public sealed class SourceMapEntry
@@ -380,9 +380,14 @@ namespace MICore
 
         public static ReadOnlyCollection<SourceMapEntry> CreateCollection(Dictionary<string, object>? source)
         {
-            var sourceMaps = new List<SourceMapEntry>(source?.Keys.Count ?? 0);
+            int count = source?.Keys.Count ?? 0;
+            if (count == 0)
+            {
+                return new ReadOnlyCollection<SourceMapEntry>(Array.Empty<SourceMapEntry>());
+            }
 
-            foreach (var item in source ?? new Dictionary<string, object>())
+            var sourceMaps = new List<SourceMapEntry>();
+            foreach (var item in source!)
             {
                 string compileTimePath = item.Key;
                 string? editorPath = null;
@@ -880,7 +885,7 @@ namespace MICore
         private string? _exePath;
 
         /// <summary>
-        /// [Required] Path to the executable file. This could be a path on the remote machine (for Pipe transport)
+        /// Path to the executable file. This could be a path on the remote machine (for Pipe transport)
         /// or the local machine (Local transport).
         /// </summary>
         public virtual string? ExePath
@@ -1383,19 +1388,25 @@ namespace MICore
 
                     // if the customLauncher element is present then try using the custom launcher implementation from the config store
                     JToken? customLauncherToken = parsedOptions["customLauncher"];
-                    if (customLauncherToken is not null && !IsNullOrWhiteSpace(customLauncherToken.Value<string>()))
+                    if (customLauncherToken is not null && customLauncherToken.Value<string>() is string customLauncherName && !IsNullOrWhiteSpace(customLauncherName))
                     {
-                        string customLauncherName = customLauncherToken.Value<string>() ?? string.Empty;
-                        var jsonLauncher = configStore?.GetCustomLauncher(customLauncherName);
+                        if (configStore is null || eventCallback is null)
+                        {
+                            throw new InvalidLaunchOptionsException(MICoreResources.Error_UnknownLaunchOptions);
+                        }
+
+                        var jsonLauncher = configStore.GetCustomLauncher(customLauncherName);
                         if (jsonLauncher == null)
                         {
                             throw new ArgumentException(string.Format(CultureInfo.CurrentCulture, MICoreResources.Error_UnknownCustomLauncher, customLauncherName));
                         }
-                        if (jsonLauncher as IPlatformAppLauncher == null)
+
+                        if (jsonLauncher is not IPlatformAppLauncher platformAppLauncher)
                         {
                             throw new ArgumentException(string.Format(CultureInfo.CurrentCulture, MICoreResources.Error_LauncherNotFound, customLauncherName));
                         }
-                        launchOptions = ExecuteLauncher(configStore, (IPlatformAppLauncher)jsonLauncher, exePath, args, dir, parsedOptions, eventCallback, targetEngine, logger);
+
+                        launchOptions = ExecuteLauncher(configStore, platformAppLauncher, exePath, args, dir, parsedOptions, eventCallback, targetEngine, logger);
                     }
                     else if (parsedOptions["pipeTransport"] is JToken pipeTransportToken && pipeTransportToken.HasValues)
                     {
@@ -1508,7 +1519,7 @@ namespace MICore
 
             if (clsidLauncher != Guid.Empty)
             {
-                if (launcherXmlOptions is null)
+                if (launcherXmlOptions is null || configStore is null)
                 {
                     throw new InvalidLaunchOptionsException(MICoreResources.Error_UnknownLaunchOptions);
                 }
@@ -1517,7 +1528,7 @@ namespace MICore
             }
             else if (launcher != null)
             {
-                if (launcherXmlOptions is null)
+                if (launcherXmlOptions is null || configStore is null || eventCallback is null)
                 {
                     throw new InvalidLaunchOptionsException(MICoreResources.Error_UnknownLaunchOptions);
                 }
@@ -1560,8 +1571,8 @@ namespace MICore
                                                             Logger logger)
         {
             var suppOptions = GetOptionsFromFile(logger);
-            string connection;
-            ((IDebugPort2)unixPort).GetPortName(out connection!);
+            string? connection;
+            ((IDebugPort2)unixPort).GetPortName(out connection);
             AttachOptionsForConnection? attachOptions = null;
             if (suppOptions != null && suppOptions.AttachOptions != null)
             {
@@ -2175,13 +2186,8 @@ namespace MICore
             return attributeValue;
         }
 
-        private static LaunchOptions ExecuteLauncher(HostConfigurationStore? configStore, Guid clsidLauncher, string exePath, string? args, string? dir, object launcherXmlOptions, IDeviceAppLauncherEventCallback? eventCallback, TargetEngine targetEngine, Logger? logger)
+        private static LaunchOptions ExecuteLauncher(HostConfigurationStore configStore, Guid clsidLauncher, string exePath, string? args, string? dir, object launcherXmlOptions, IDeviceAppLauncherEventCallback? eventCallback, TargetEngine targetEngine, Logger? logger)
         {
-            if (configStore is null)
-            {
-                throw new ArgumentNullException(nameof(configStore));
-            }
-
             var deviceAppLauncher = HostLoader.VsCoCreateManagedObject(configStore, clsidLauncher) as IPlatformAppLauncher;
             if (deviceAppLauncher == null)
             {
@@ -2190,7 +2196,7 @@ namespace MICore
             return ExecuteLauncher(configStore, deviceAppLauncher, exePath, args, dir, launcherXmlOptions, eventCallback, targetEngine, logger);
         }
 
-        private static LaunchOptions ExecuteLauncher(HostConfigurationStore? configStore, IPlatformAppLauncher deviceAppLauncher, string exePath, string? args, string? dir, object launcherOptions, IDeviceAppLauncherEventCallback? eventCallback, TargetEngine targetEngine, Logger? logger)
+        private static LaunchOptions ExecuteLauncher(HostConfigurationStore configStore, IPlatformAppLauncher deviceAppLauncher, string exePath, string? args, string? dir, object launcherOptions, IDeviceAppLauncherEventCallback eventCallback, TargetEngine targetEngine, Logger? logger)
         {
             bool success = false;
 
@@ -2198,7 +2204,7 @@ namespace MICore
             {
                 try
                 {
-                    deviceAppLauncher.Initialize(configStore ?? throw new ArgumentNullException(nameof(configStore)), eventCallback ?? throw new ArgumentNullException(nameof(eventCallback)));
+                    deviceAppLauncher.Initialize(configStore, eventCallback);
                     deviceAppLauncher.SetLaunchOptions(exePath, args ?? string.Empty, dir ?? string.Empty, launcherOptions, targetEngine);
                 }
                 catch (Exception e) when (!(e is InvalidLaunchOptionsException) && ExceptionHelper.BeforeCatch(e, logger, reportOnlyCorrupting: true))

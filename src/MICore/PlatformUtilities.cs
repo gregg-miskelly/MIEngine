@@ -73,7 +73,7 @@ namespace MICore
         }
 
         // Abstract API call to add an environment variable to a new process
-        public static void SetEnvironmentVariable(this ProcessStartInfo processStartInfo, string key, string value)
+        public static void SetEnvironmentVariable(this ProcessStartInfo processStartInfo, string key, string? value)
         {
             processStartInfo.Environment[key] = value;
         }
