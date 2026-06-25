@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading;
-using System.Diagnostics;
 using System.IO;
 using System.Collections;
 using System.Text.RegularExpressions;
@@ -26,7 +25,7 @@ namespace MICore
             _serverTransport = serverTransport;
         }
 
-        public void Init(ITransportCallback transportCallback, LaunchOptions options, Logger logger, HostWaitLoop waitLoop = null)
+        public void Init(ITransportCallback transportCallback, LaunchOptions options, Logger logger, HostWaitLoop? waitLoop = null)
         {
             _launchTimeout = ((LocalLaunchOptions)options).ServerLaunchTimeout;
             _serverTransport.Init(transportCallback, options, logger, waitLoop);
@@ -66,7 +65,7 @@ namespace MICore
             _clientTransport.Send(cmd);
         }
 
-        public int ExecuteSyncCommand(string commandDescription, string commandText, int timeout, out string output, out string error)
+        public int ExecuteSyncCommand(string commandDescription, string commandText, int timeout, out string? output, out string? error)
         {
             return _clientTransport.ExecuteSyncCommand(commandDescription, commandText, timeout, out output, out error);
         }

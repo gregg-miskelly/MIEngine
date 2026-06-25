@@ -13,7 +13,7 @@ namespace MICore
 
     public interface ITransport
     {
-        void Init(ITransportCallback transportCallback, LaunchOptions options, Logger logger, HostWaitLoop waitLoop = null);
+        void Init(ITransportCallback transportCallback, LaunchOptions options, Logger logger, HostWaitLoop? waitLoop = null);
         void Send(string cmd);
         void Close();
         bool IsClosed { get; }
@@ -36,7 +36,7 @@ namespace MICore
         /// <param name="output">Output of the command in stdout</param>
         /// <param name="error">Output of the command in stderr</param>
         /// <returns>Exit code of the command</returns>
-        int ExecuteSyncCommand(string commandDescription, string commandText, int timeout, out string output, out string error);
+        int ExecuteSyncCommand(string commandDescription, string commandText, int timeout, out string? output, out string? error);
 
         bool CanExecuteCommand();
     }
@@ -71,7 +71,7 @@ namespace MICore
         /// Fired when either the target process exits or when the stdout stream is closed.
         /// </summary>
         /// <param name="exitCode">[Optional] exit code from the target process. null if unknown.</param>
-        void OnDebuggerProcessExit(string exitCode);
+        void OnDebuggerProcessExit(string? exitCode);
 
         /// <summary>
         /// Appends a line of text to the initialization log which is dumped to the output
