@@ -1201,7 +1201,7 @@ namespace MICore
             Debug.Fail(message + ": " + result);
 
             Logger?.WriteLine(LogLevel.Error, String.Format(CultureInfo.CurrentCulture, "MI parsing error: {0}: \"{1}\"", message, result));
-
+            throw new InvalidOperationException(String.Format(CultureInfo.CurrentCulture, "MI parsing error: {0}: \"{1}\"", message, result));
         }
 
         // The amount of characters to send to the UI upon an error.
